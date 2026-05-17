@@ -24,8 +24,9 @@ models:
   maxdl_transform:
     staging:
       +materialized: view
-      +database: iceberg_bronze        # 읽기 원천(Polaris bronze 카탈로그)
-      +schema: staging
+      +database: iceberg_silver        # 쓰기: silver 카탈로그(svc-trino bronze 는 RO)
+      +schema: staging                 # 읽기 원천은 source()=iceberg_bronze
+
     intermediate:
       +materialized: incremental
       +database: iceberg_silver

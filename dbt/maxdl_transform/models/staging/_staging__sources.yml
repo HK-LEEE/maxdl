@@ -1,32 +1,206 @@
-# =============================================================================
-# Bronze 원천 정의 (Polaris bronze 카탈로그 = Trino catalog `iceberg_bronze`)
-# - 소스 DB별 네임스페이스(스키마) = maxplatform/pfms/maxapex/maxtdoracle.
-# - 실제 테이블은 소스 스키마 확보 후 각 source.tables 에 추가(mock 미생성).
-#   예: - name: <table>  # loaded_at_field, columns, freshness 등 명시
-# =============================================================================
 version: 2
 
 sources:
   - name: maxplatform
-    database: iceberg_bronze        # Trino catalog
-    schema: maxplatform             # Polaris bronze 하위 네임스페이스
-    description: "MES/공통 (PostgreSQL maxplatform) Bronze 원천"
-    tables: []
-
+    database: iceberg_bronze
+    schema: maxplatform
+    description: "maxplatform Bronze (Airbyte 적재)"
+    tables:
+      - name: authorization_codes
+      - name: casual_task_permissions
+      - name: client_status
+      - name: client_status_history
+      - name: clients
+      - name: clients_history
+      - name: ct_alarm_send_logs
+      - name: ct_config_stage_permissions
+      - name: ct_periodic_generation_logs
+      - name: ct_periodic_rules
+      - name: ct_report_templates
+      - name: ct_site_configs
+      - name: ct_site_form_fields
+      - name: ct_site_stages
+      - name: ct_stage_notification_rules
+      - name: ct_stage_transitions
+      - name: error_logs
+      - name: factories
+      - name: features
+      - name: features_history
+      - name: group_clients
+      - name: group_clients_history
+      - name: group_factories
+      - name: group_sites
+      - name: groups
+      - name: groups_history
+      - name: login_history
+      - name: mail_histories
+      - name: maxmes_factory
+      - name: maxmes_operation
+      - name: migrations
+      - name: mt_meeting_action_items
+      - name: mt_meeting_ai_drafts
+      - name: mt_meeting_ai_proposals
+      - name: mt_meeting_attachments
+      - name: mt_meeting_attendees
+      - name: mt_meeting_audit_logs
+      - name: mt_meeting_chunks
+      - name: mt_meeting_decisions
+      - name: mt_meeting_minutes
+      - name: mt_meeting_publication_channels
+      - name: mt_meeting_publication_recipients
+      - name: mt_meeting_publications
+      - name: mt_meeting_shares
+      - name: mt_meeting_tags
+      - name: page_access_logs
+      - name: permissions
+      - name: permissions_history
+      - name: personal_schedule_attachments
+      - name: personal_schedule_history
+      - name: personal_schedules
+      - name: platform_common_codes
+      - name: platform_meeting_action_items
+      - name: platform_meeting_attachments
+      - name: platform_meeting_attendees
+      - name: platform_meeting_audit_logs
+      - name: platform_meeting_decisions
+      - name: platform_meeting_minutes
+      - name: platform_meeting_shares
+      - name: platform_meeting_tags
+      - name: platform_message_attachments
+      - name: platform_message_recipients
+      - name: platform_message_sender_status
+      - name: platform_message_templates
+      - name: platform_messages
+      - name: platform_notification_history
+      - name: platform_notifications
+      - name: platform_page_favorites
+      - name: platform_scheduled_alarm_history
+      - name: platform_scheduled_alarms
+      - name: refresh_tokens
+      - name: service_requests
+      - name: sites
+      - name: sr_approval_requests
+      - name: sr_approval_rules
+      - name: sr_approval_steps
+      - name: sr_attachments
+      - name: sr_audit_logs
+      - name: sr_comments
+      - name: sr_project_attachments
+      - name: sr_project_comments
+      - name: sr_project_deliverable_versions
+      - name: sr_project_deliverables
+      - name: sr_project_groups
+      - name: sr_project_history
+      - name: sr_project_linkages
+      - name: sr_project_permissions
+      - name: sr_project_requests
+      - name: sr_project_snapshot_phases
+      - name: sr_project_snapshot_tasks
+      - name: sr_project_snapshots
+      - name: sr_project_subs
+      - name: sr_project_templates
+      - name: sr_project_work_items
+      - name: sr_projects
+      - name: sr_task_templates
+      - name: sr_work_items
+      - name: system_logs
+      - name: tool_executions
+      - name: user_groups
+      - name: user_groups_history
+      - name: user_permissions
+      - name: users
+      - name: users_history
   - name: pfms
     database: iceberg_bronze
     schema: pfms
-    description: "MAX-APEX 공정/품질 (MSSQL pfms) Bronze 원천"
-    tables: []
-
+    description: "pfms Bronze (Airbyte 적재)"
+    tables:
+      - name: pbatprcdat
+      - name: pbatstsdat
+      - name: poprbatdat
+      - name: process_memo
   - name: maxapex
     database: iceberg_bronze
     schema: maxapex
-    description: "MAX-APEX (PostgreSQL maxapex) Bronze 원천"
-    tables: []
-
+    description: "maxapex Bronze (Airbyte 적재)"
+    tables:
+      - name: api_key_logs
+      - name: api_key_scopes_definition
+      - name: api_keys
+      - name: error_logs
+      - name: log_counts
+      - name: maxapex_batch_job_definition
+      - name: maxapex_batch_job_execution
+      - name: maxapex_batch_job_lock_history
+      - name: maxapex_batch_job_notification
+      - name: maxapex_batch_mapflow_oper_factor
+      - name: maxapex_batch_method
+      - name: maxapex_batch_method_vessel
+      - name: maxapex_batch_oper_factor
+      - name: maxapex_batch_operation
+      - name: maxapex_batch_product
+      - name: maxapex_batch_tag
+      - name: maxapex_batch_typeproduct
+      - name: maxapex_batch_vessel
+      - name: maxapex_common_codes
+      - name: maxapex_dataset
+      - name: maxapex_factor
+      - name: maxapex_factorgroup
+      - name: maxapex_factorspec
+      - name: maxapex_factory_influx_config
+      - name: maxapex_factoryplant
+      - name: maxapex_input_spc_monitoring_template
+      - name: maxapex_lot_traceability
+      - name: maxapex_map_department_group
+      - name: maxapex_metadata_user
+      - name: maxapex_notice_attachments
+      - name: maxapex_notice_board_groups
+      - name: maxapex_notice_boards
+      - name: maxapex_notice_mail_mentions
+      - name: maxapex_notice_posts
+      - name: maxapex_notice_template_groups
+      - name: maxapex_notice_templates
+      - name: maxapex_parameters
+      - name: maxapex_plant_unuse
+      - name: maxapex_plantgroup
+      - name: maxapex_pm_access_logs
+      - name: maxapex_pm_component_images
+      - name: maxapex_pm_configs
+      - name: maxapex_pm_data_sources
+      - name: maxapex_pm_permissions
+      - name: maxapex_pm_query_templates
+      - name: maxapex_process_parameters
+      - name: maxapex_processes
+      - name: maxapex_quality_data
+      - name: maxapex_scoreboard_preset
+      - name: maxapex_sitefactory
+      - name: maxapex_spc_data
+      - name: maxapex_td_measurement_factor
+      - name: maxapex_td_measurement_machine
+      - name: maxapex_td_measurement_master
+      - name: maxapex_td_measurement_product
+      - name: maxapex_td_measurement_step
+      - name: maxapex_td_process_factor
+      - name: maxapex_td_process_machine
+      - name: maxapex_td_process_master
+      - name: maxapex_td_process_product
+      - name: maxapex_td_process_step
+      - name: maxapex_td_trace_factor
+      - name: maxapex_td_trace_machine
+      - name: maxapex_td_trace_master
+      - name: maxdw_e2e_lot
+      - name: migrations
+      - name: mssql_pg_sync_queue
+      - name: smartanalysis_algorithm_details
+      - name: smartanalysis_algorithm_features
+      - name: smartanalysis_algorithms
+      - name: smartanalysis_functions
+      - name: smartanalysis_workflow_permissions
+      - name: smartanalysis_workflows
+      - name: temp_factory_process_data
   - name: maxtdoracle
     database: iceberg_bronze
     schema: maxtdoracle
-    description: "레거시 Oracle (MAXTDORACLE) Bronze 원천 — 인제스션 별도 트랙"
-    tables: []
+    description: "maxtdoracle Bronze (Airbyte 적재)"
+    tables:
+      - name: production_log
