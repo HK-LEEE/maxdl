@@ -152,3 +152,35 @@ webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
   updated 컬럼 도입/주기 replica 검토(기존 기재 유지).
 - 인시던트 학습: 디스크 회복 시 CoreDNS `host.k3d.internal` 항목 소실 →
   복구 필요(`kubectl patch cm coredns`). RUNBOOK 참조.
+
+
+## FU-4b 해결 + 버전 감사 (2026-05-17)
+
+- ✅ **FU-4b 해결(정석)**: 근본 원인은 커스텀 인제스션 부재가 아니라 **Trino
+  설정**. Trino Iceberg REST 카탈로그는 `iceberg.rest-catalog.
+  case-insensitive-name-matching=true` 지원(+`.cache-ttl`). 앞서 크래시는
+  잘못된 속성명(`iceberg.case-insensitive-name-matching`, generic) 때문.
+  조치: Trino 480→**481**(이미지 태그 오버라이드; 차트 appVersion 은 480 까지만
+  발행) + 3 Iceberg 카탈로그에 위 속성 적용. pfms(MSSQL 대문자) stream.name
+  원본 유지 → 소스 매칭, Trino case-insensitive 조회. **pfms 4테이블 실데이터
+  Trino 검증 완료**(pbatprcdat=12, pbatstsdat=49, poprbatdat=60). 커스텀 코드
+  불필요, **테이블 수 무관 무한 확장**(카탈로그 속성 1개).
+  → FU-4 = maxplatform/maxapex/pfms/maxtdoracle **4/4 완전체**.
+- 정리(선택): maxtdoracle 는 소문자 stream.name 으로 적재돼 있음 — 일관성 위해
+  추후 원본명으로 재생성 가능(소스 빈 테이블이라 우선순위 낮음).
+
+### 전 컴포넌트 버전 신규 감사 (2026-05-17)
+
+| 컴포넌트 | 배포 | 최신 | 조치 |
+|---|---|---|---|
+| Trino | 480→**481** | 481 | ✅ 완료 |
+| **Superset** | **5.0.0** | **6.1.0** | ⚠️ **stale — 신차트로 6.x 업그레이드(FU-8 신규)** |
+| Airflow | 3.2.0 | 3.2.1 | 패치 권장 |
+| Airbyte 플랫폼/커넥터 | 2.1.0 / s3-data-lake 0.3.48 | 동일 | ✅ 최신(연결자는 플랫폼과 독립 버전) |
+| Polaris / OpenMetadata / dbt / sealed-secrets | — | — | ✅ 현행 |
+| k3s | 1.31.5 | 1.34.7 | 개발 무방, 선택적 |
+
+## FU-8 (신규). Superset 6.x 업그레이드 〔P1·stale 해소〕
+
+Superset 5.0.0 은 최신(6.1.0) 대비 메이저 2단계 뒤. 신 Helm 차트로 6.x
+업그레이드. SECRET_KEY 회전 시 메타DB 재초기화 주의(FU-5 학습).
