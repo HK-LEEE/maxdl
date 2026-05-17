@@ -9,6 +9,29 @@
 # =============================================================================
 executor: "KubernetesExecutor"
 
+# FU-3: Cosmos+dbt-trino+providers-airbyte+dbt프로젝트+DAG 동봉 커스텀 이미지
+# (k3d image import 로 노드에 적재 → pullPolicy Never)
+images:
+  airflow:
+    repository: maxdl/airflow
+    tag: fu3
+    pullPolicy: Never
+
+# Trino/Airbyte 접속 env (전 Airflow 컴포넌트·태스크 pod 공통)
+env:
+  - name: TRINO_HOST
+    value: "trino.maxdl-query.svc.cluster.local"
+  - name: TRINO_PORT
+    value: "8080"
+  - name: TRINO_USER
+    value: "dbt"
+  - name: AIRBYTE_API
+    value: "http://airbyte-airbyte-server-svc.maxdl-ingest:8001"
+# Airbyte API 자격(SealedSecret airbyte-api: CLIENT_ID/SECRET)
+extraEnvFrom: |
+  - secretRef:
+      name: airbyte-api
+
 # 예제 DAG 비활성(차트 기본 False 이나 명시)
 config:
   core:
@@ -24,11 +47,10 @@ postgresql:
 redis:
   enabled: false
 
-# DAG 영속 볼륨(초기: 빈 PVC. git-sync/커스텀이미지는 후속 wiring)
+# DAG 은 커스텀 이미지에 동봉(/opt/airflow/dags) → persistence/git-sync 불필요
 dags:
   persistence:
-    enabled: true
-    size: 1Gi
+    enabled: false
   gitSync:
     enabled: false
 
