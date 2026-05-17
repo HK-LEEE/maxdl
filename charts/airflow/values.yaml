@@ -27,10 +27,14 @@ env:
     value: "dbt"
   - name: AIRBYTE_API
     value: "http://airbyte-airbyte-server-svc.maxdl-ingest:8001"
-# Airbyte API 자격(SealedSecret airbyte-api: CLIENT_ID/SECRET)
-extraEnvFrom: |
-  - secretRef:
-      name: airbyte-api
+  # Airbyte API 자격: env(secretKeyRef)로 — extraEnvFrom 은 KubernetesExecutor
+  # 태스크 pod 템플릿에 미전파되어 task 실패. env 리스트는 KE pod 에 전파됨.
+  - name: AIRBYTE_CLIENT_ID
+    valueFrom:
+      secretKeyRef: { name: airbyte-api, key: AIRBYTE_CLIENT_ID }
+  - name: AIRBYTE_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef: { name: airbyte-api, key: AIRBYTE_CLIENT_SECRET }
 
 # 예제 DAG 비활성(차트 기본 False 이나 명시)
 config:
