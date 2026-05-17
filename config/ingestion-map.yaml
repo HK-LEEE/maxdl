@@ -1,70 +1,225 @@
-# =============================================================================
-# 인제스션 매핑 (SSOT) — maxdl
-# - 소스 테이블별 적재 모드/커서/PK 를 선언. Airbyte 커넥션 구성의 단일 진실원천.
-# - 계획서 §1(적재모드 매핑)·§2(CDC 준비-only) 준수:
-#     CDC 미사용. 모든 증분은 "컬럼 커서" 기준. CDC 는 추후 source 설정만 변경.
-# - 실제 테이블 목록은 각 소스 DB 스키마 확인 후 `tables:` 에 채운다.
-#   (mock/예시 테이블을 임의 생성하지 않는다 — 빈 목록 + 규약 문서화 상태)
-#
-# 적재 모드 → Airbyte sync mode → Iceberg 결과 매핑
-#   append  : Incremental | Append            (cursor 필수)         → 누적
-#   replica : Full Refresh | Overwrite        (cursor 불필요)       → 원천 미러(전체 교체)
-#   merge   : Incremental | Append + Dedup     (cursor + primaryKey) → PK당 최신 1행
-# =============================================================================
-
-# 적재 모드 정의(커넥션 생성기가 참조하는 규약)
+# ============================================================================
+# 인제스션 매핑 (SSOT) — maxdl / FU-4 (자동 생성: introspection 기반)
+# 규칙: PK 존재 AND 시간(커서)컬럼 존재 → merge / 그 외 → replica
+# 컬럼 상세 전체는 config/source-schema.json 참조. 재생성: 동일 introspection.
+# 적재모드→Airbyte sync: merge=Incremental|Append+Dedup(cursor+PK),
+#   replica=Full Refresh|Overwrite. CDC 미사용(컬럼 커서).
+# ============================================================================
 modes:
-  append:
-    syncMode: incremental
-    destinationSyncMode: append
-    requires: [cursorField]
-  replica:
-    syncMode: full_refresh
-    destinationSyncMode: overwrite
-    requires: []
-  merge:
-    syncMode: incremental
-    destinationSyncMode: append_dedup
-    requires: [cursorField, primaryKey]
+  merge:   { syncMode: incremental,  destinationSyncMode: append_dedup, requires: [cursorField, primaryKey] }
+  replica: { syncMode: full_refresh, destinationSyncMode: overwrite,    requires: [] }
+  append:  { syncMode: incremental,  destinationSyncMode: append,       requires: [cursorField] }
 
-# 소스 DB → Airbyte 소스 커넥터 + 자격증명 시크릿(maxdl-ingest)
+destination:
+  connector: destination-s3-data-lake
+  catalog: { type: POLARIS, server_uri: "http://polaris.maxdl-catalog.svc.cluster.local:8181/api/catalog", warehouse: bronze }
+  s3: { endpoint: "http://host.k3d.internal:8333", region: kr-dw-pt-001, pathStyleAccess: true, bucket: maxdl-warehouse, secret: seaweedfs-s3 }
+
 sources:
   maxplatform:
     connector: source-postgres
-    secret: src-db-maxplatform          # SealedSecret(복호화본)
-    replicationMethod: standard          # 커서 기반(=CDC 아님). 추후 CDC 시 이 값만 변경
-    bronzeNamespace: maxplatform         # Polaris bronze 카탈로그 하위 네임스페이스
-    tables: []                           # 예) - { name: "schema.table", mode: merge, cursorField: updated_at, primaryKey: [id] }
+    secret: src-db-maxplatform
+    replicationMethod: standard          # 커서 기반(=CDC 아님)
+    bronzeNamespace: maxplatform
+    tables:   # 104 tables
+      - { name: "public.authorization_codes", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.casual_task_permissions", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.client_status", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.client_status_history", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.clients", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.clients_history", mode: merge, cursorField: "updated_at", primaryKey: ["history_id"] }
+      - { name: "public.ct_alarm_send_logs", mode: merge, cursorField: "sent_at", primaryKey: ["id"] }
+      - { name: "public.ct_config_stage_permissions", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.ct_periodic_generation_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.ct_periodic_rules", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.ct_report_templates", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.ct_site_configs", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.ct_site_form_fields", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.ct_site_stages", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.ct_stage_notification_rules", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.ct_stage_transitions", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.error_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.factories", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.features", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.features_history", mode: merge, cursorField: "updated_at", primaryKey: ["history_id"] }
+      - { name: "public.group_clients", mode: merge, cursorField: "granted_at", primaryKey: ["group_id", "client_id"] }
+      - { name: "public.group_clients_history", mode: merge, cursorField: "changed_at", primaryKey: ["history_id"] }
+      - { name: "public.group_factories", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.group_sites", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.groups", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.groups_history", mode: merge, cursorField: "updated_at", primaryKey: ["history_id"] }
+      - { name: "public.login_history", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.mail_histories", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxmes_factory", mode: merge, cursorField: "modified_at", primaryKey: ["id"] }
+      - { name: "public.maxmes_operation", mode: merge, cursorField: "modified_at", primaryKey: ["id"] }
+      - { name: "public.migrations", mode: replica }
+      - { name: "public.mt_meeting_action_items", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_ai_drafts", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_ai_proposals", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_attachments", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_attendees", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_audit_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_chunks", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_decisions", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_minutes", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_publication_channels", mode: merge, cursorField: "started_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_publication_recipients", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_publications", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_shares", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.mt_meeting_tags", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.page_access_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.permissions", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.permissions_history", mode: merge, cursorField: "updated_at", primaryKey: ["history_id"] }
+      - { name: "public.personal_schedule_attachments", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.personal_schedule_history", mode: merge, cursorField: "changed_at", primaryKey: ["id"] }
+      - { name: "public.personal_schedules", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_common_codes", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_action_items", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_attachments", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_attendees", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_audit_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_decisions", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_minutes", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_shares", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_meeting_tags", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_message_attachments", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_message_recipients", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_message_sender_status", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_message_templates", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.platform_messages", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_notification_history", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_notifications", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_page_favorites", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.platform_scheduled_alarm_history", mode: merge, cursorField: "processed_at", primaryKey: ["id"] }
+      - { name: "public.platform_scheduled_alarms", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.refresh_tokens", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.service_requests", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sites", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_approval_requests", mode: merge, cursorField: "requested_at", primaryKey: ["id"] }
+      - { name: "public.sr_approval_rules", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_approval_steps", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_attachments", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_audit_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_comments", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_attachments", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_comments", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_deliverable_versions", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_deliverables", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_groups", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_history", mode: merge, cursorField: "changed_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_linkages", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_permissions", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_requests", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_snapshot_phases", mode: merge, cursorField: "plan_start_date", primaryKey: ["id"] }
+      - { name: "public.sr_project_snapshot_tasks", mode: merge, cursorField: "start_date", primaryKey: ["id"] }
+      - { name: "public.sr_project_snapshots", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_subs", mode: merge, cursorField: "start_date", primaryKey: ["id"] }
+      - { name: "public.sr_project_templates", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_project_work_items", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_projects", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_task_templates", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.sr_work_items", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.system_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.tool_executions", mode: merge, cursorField: "executed_at", primaryKey: ["id"] }
+      - { name: "public.user_groups", mode: merge, cursorField: "assigned_at", primaryKey: ["user_id", "group_id"] }
+      - { name: "public.user_groups_history", mode: merge, cursorField: "changed_at", primaryKey: ["history_id"] }
+      - { name: "public.user_permissions", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.users", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.users_history", mode: merge, cursorField: "updated_at", primaryKey: ["history_id"] }
   pfms:
     connector: source-mssql
     secret: src-db-pfms
-    replicationMethod: standard
+    replicationMethod: standard          # 커서 기반(=CDC 아님)
     bronzeNamespace: pfms
-    tables: []
+    tables:   # 4 tables
+      - { name: "dbo.PBATPRCDAT", mode: replica }
+      - { name: "dbo.PBATSTSDAT", mode: replica }
+      - { name: "dbo.POPRBATDAT", mode: replica }
+      - { name: "dbo.PROCESS_MEMO", mode: merge, cursorField: "UPDATED_AT", primaryKey: ["MEMO_ID"] }
   maxapex:
     connector: source-postgres
     secret: src-db-maxapex
-    replicationMethod: standard
+    replicationMethod: standard          # 커서 기반(=CDC 아님)
     bronzeNamespace: maxapex
-    tables: []
+    tables:   # 74 tables
+      - { name: "public.api_key_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.api_key_scopes_definition", mode: merge, cursorField: "updated_at", primaryKey: ["code"] }
+      - { name: "public.api_keys", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.error_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.log_counts", mode: merge, cursorField: "recorded_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_job_definition", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_job_execution", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_job_lock_history", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_job_notification", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_mapflow_oper_factor", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_method", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_method_vessel", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_oper_factor", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_operation", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_product", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_tag", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_typeproduct", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_batch_vessel", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_common_codes", mode: merge, cursorField: "modified_at", primaryKey: ["client_code", "code_group", "code"] }
+      - { name: "public.maxapex_dataset", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_factor", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_factorgroup", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_factorspec", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_factory_influx_config", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_factoryplant", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_input_spc_monitoring_template", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_lot_traceability", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_map_department_group", mode: merge, cursorField: "modified_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_metadata_user", mode: merge, cursorField: "modifiedat", primaryKey: ["id"] }
+      - { name: "public.maxapex_notice_attachments", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_notice_board_groups", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_notice_boards", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_notice_mail_mentions", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_notice_posts", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_notice_template_groups", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_notice_templates", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_parameters", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_plant_unuse", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_plantgroup", mode: merge, cursorField: "modified_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_pm_access_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_pm_component_images", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_pm_configs", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_pm_data_sources", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_pm_permissions", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_pm_query_templates", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_process_parameters", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_processes", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_quality_data", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_scoreboard_preset", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_sitefactory", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_spc_data", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_measurement_factor", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_measurement_machine", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_measurement_master", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_measurement_product", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_measurement_step", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_process_factor", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_process_machine", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_process_master", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_process_product", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_process_step", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_trace_factor", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_trace_machine", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.maxapex_td_trace_master", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.maxdw_e2e_lot", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.migrations", mode: replica }
+      - { name: "public.mssql_pg_sync_queue", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
+      - { name: "public.smartanalysis_algorithm_details", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.smartanalysis_algorithm_features", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.smartanalysis_algorithms", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.smartanalysis_functions", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.smartanalysis_workflow_permissions", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.smartanalysis_workflows", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
+      - { name: "public.temp_factory_process_data", mode: merge, cursorField: "vtime", primaryKey: ["id"] }
   maxtdoracle:
     connector: source-oracle
     secret: src-db-maxtdoracle
-    replicationMethod: standard          # source-oracle CDC 미지원(계획서 §리스크 4)
+    replicationMethod: standard          # 커서 기반(=CDC 아님)
     bronzeNamespace: maxtdoracle
-    tables: []
-
-# 목적지: Iceberg(Polaris REST) → SeaweedFS 전용 버킷(Bronze)
-destination:
-  connector: destination-s3-data-lake    # 계획서 최고 잔존 리스크(beta) — 검증 필요
-  catalog:
-    type: REST
-    uri: "http://polaris.maxdl-catalog.svc.cluster.local:8181/api/catalog"
-    warehouse: "bronze"
-    oauth2: { scope: "PRINCIPAL_ROLE:ALL" }   # client-credentials, principal 별도 발급 예정
-  s3:
-    endpoint: "http://host.k3d.internal:8333"
-    region: "kr-dw-pt-001"
-    pathStyleAccess: true
-    bucket: "maxdl-warehouse"
-    secret: seaweedfs-s3                  # maxdl-ingest 의 SealedSecret
+    tables:   # 1 tables
+      - { name: "MAXTDORACLE.PRODUCTION_LOG", mode: merge, cursorField: "PROD_DATE", primaryKey: ["LOG_ID"] }
