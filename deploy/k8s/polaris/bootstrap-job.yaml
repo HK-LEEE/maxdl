@@ -1,0 +1,48 @@
+# =============================================================================
+# Polaris realm/root principal bootstrap Job
+# - relational-jdbc 백엔드는 서버 기동 전 realm(POLARIS)과 root principal 을
+#   DB에 1회 주입해야 한다. admin-tool 컨테이너로 실행.
+# - DB 접속값은 polaris-persistence, root 자격증명은 polaris-bootstrap 에서 주입.
+# - 멱등성: 이미 bootstrap 된 realm 재실행 시 admin-tool 이 무해하게 종료.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: polaris-bootstrap
+  namespace: maxdl-catalog
+  labels: { app.kubernetes.io/part-of: maxdl }
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600          # 완료 후 10분 뒤 정리
+  template:
+    metadata:
+      labels: { app.kubernetes.io/part-of: maxdl, job: polaris-bootstrap }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: admin-tool
+          image: apache/polaris-admin-tool:1.4.1   # 차트와 동일 버전 핀
+          imagePullPolicy: IfNotPresent
+          env:
+            # 메타스토어 타입(서버와 동일해야 함)
+            - name: POLARIS_PERSISTENCE_TYPE
+              value: "relational-jdbc"
+            # PostgreSQL 접속(폴라리스 서버와 동일 DB) — SealedSecret 주입
+            - name: QUARKUS_DATASOURCE_USERNAME
+              valueFrom: { secretKeyRef: { name: polaris-persistence, key: username } }
+            - name: QUARKUS_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: polaris-persistence, key: password } }
+            - name: QUARKUS_DATASOURCE_JDBC_URL
+              valueFrom: { secretKeyRef: { name: polaris-persistence, key: jdbcUrl } }
+            # bootstrap 할 root principal 자격증명
+            - name: BOOT_REALM
+              valueFrom: { secretKeyRef: { name: polaris-bootstrap, key: realm } }
+            - name: BOOT_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: polaris-bootstrap, key: clientId } }
+            - name: BOOT_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: polaris-bootstrap, key: clientSecret } }
+            # realm,clientId,clientSecret 단일 문자열(앞 env 참조 — K8s $(VAR) 치환)
+            - name: BOOT_CRED
+              value: "$(BOOT_REALM),$(BOOT_CLIENT_ID),$(BOOT_CLIENT_SECRET)"
+          # 이미지 ENTRYPOINT 가 admin-tool jar 실행 → subcommand 만 args 로 전달
+          args: ["bootstrap", "-r", "$(BOOT_REALM)", "-c", "$(BOOT_CRED)"]

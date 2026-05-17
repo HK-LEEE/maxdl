@@ -1,0 +1,70 @@
+# =============================================================================
+# 인제스션 매핑 (SSOT) — maxdl
+# - 소스 테이블별 적재 모드/커서/PK 를 선언. Airbyte 커넥션 구성의 단일 진실원천.
+# - 계획서 §1(적재모드 매핑)·§2(CDC 준비-only) 준수:
+#     CDC 미사용. 모든 증분은 "컬럼 커서" 기준. CDC 는 추후 source 설정만 변경.
+# - 실제 테이블 목록은 각 소스 DB 스키마 확인 후 `tables:` 에 채운다.
+#   (mock/예시 테이블을 임의 생성하지 않는다 — 빈 목록 + 규약 문서화 상태)
+#
+# 적재 모드 → Airbyte sync mode → Iceberg 결과 매핑
+#   append  : Incremental | Append            (cursor 필수)         → 누적
+#   replica : Full Refresh | Overwrite        (cursor 불필요)       → 원천 미러(전체 교체)
+#   merge   : Incremental | Append + Dedup     (cursor + primaryKey) → PK당 최신 1행
+# =============================================================================
+
+# 적재 모드 정의(커넥션 생성기가 참조하는 규약)
+modes:
+  append:
+    syncMode: incremental
+    destinationSyncMode: append
+    requires: [cursorField]
+  replica:
+    syncMode: full_refresh
+    destinationSyncMode: overwrite
+    requires: []
+  merge:
+    syncMode: incremental
+    destinationSyncMode: append_dedup
+    requires: [cursorField, primaryKey]
+
+# 소스 DB → Airbyte 소스 커넥터 + 자격증명 시크릿(maxdl-ingest)
+sources:
+  maxplatform:
+    connector: source-postgres
+    secret: src-db-maxplatform          # SealedSecret(복호화본)
+    replicationMethod: standard          # 커서 기반(=CDC 아님). 추후 CDC 시 이 값만 변경
+    bronzeNamespace: maxplatform         # Polaris bronze 카탈로그 하위 네임스페이스
+    tables: []                           # 예) - { name: "schema.table", mode: merge, cursorField: updated_at, primaryKey: [id] }
+  pfms:
+    connector: source-mssql
+    secret: src-db-pfms
+    replicationMethod: standard
+    bronzeNamespace: pfms
+    tables: []
+  maxapex:
+    connector: source-postgres
+    secret: src-db-maxapex
+    replicationMethod: standard
+    bronzeNamespace: maxapex
+    tables: []
+  maxtdoracle:
+    connector: source-oracle
+    secret: src-db-maxtdoracle
+    replicationMethod: standard          # source-oracle CDC 미지원(계획서 §리스크 4)
+    bronzeNamespace: maxtdoracle
+    tables: []
+
+# 목적지: Iceberg(Polaris REST) → SeaweedFS 전용 버킷(Bronze)
+destination:
+  connector: destination-s3-data-lake    # 계획서 최고 잔존 리스크(beta) — 검증 필요
+  catalog:
+    type: REST
+    uri: "http://polaris.maxdl-catalog.svc.cluster.local:8181/api/catalog"
+    warehouse: "bronze"
+    oauth2: { scope: "PRINCIPAL_ROLE:ALL" }   # client-credentials, principal 별도 발급 예정
+  s3:
+    endpoint: "http://host.k3d.internal:8333"
+    region: "kr-dw-pt-001"
+    pathStyleAccess: true
+    bucket: "maxdl-warehouse"
+    secret: seaweedfs-s3                  # maxdl-ingest 의 SealedSecret

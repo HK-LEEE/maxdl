@@ -1,0 +1,23 @@
+# 비밀값/자격증명 — 절대 커밋 금지 (SealedSecret 만 커밋)
+*.plain.yaml
+*-plain.yaml
+secrets/plain/
+/tmp-secrets/
+*.kubeconfig
+kubeconfig*
+.env
+.env.*
+!.env.example
+
+# dbt
+dbt/**/target/
+dbt/**/dbt_packages/
+dbt/**/logs/
+
+# 파이썬/도구 산출물
+__pycache__/
+*.pyc
+.venv/
+
+# dbt 로컬 사용자 식별자(추적)
+dbt/**/.user.yml

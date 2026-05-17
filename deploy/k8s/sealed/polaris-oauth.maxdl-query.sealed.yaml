@@ -1,0 +1,16 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: polaris-oauth
+  namespace: maxdl-query
+spec:
+  encryptedData:
+    credential: AgCW4tctFLSsQRlRVDMYd9Is+hPqLG9ytuZrZYuAxfTsbW39scnXeE6ErYdqzxk+nZLTa1XC3+agmzZ67G+Mne+5fULOtR3+hGThi8138nzTesKylTWQDvc775ObMYUTENbQgYGk/EZNc8YP1H/347GyBQV9Im+qcIO2GqH5c/9hVBGGbO4x2pMBVzZIneKOum/Dc2rbLFCx0Vncs/iWZwDjSkj3Zd6ICI2BMfXU1yebr4MNKK7LvKbFOoecH7k3MjoLmot/JhEQvUwkF/0fnMze/Qz9SciWIuaPXa23XmfPGHksFDUghhJ4HxU0Q0JjkzN5BaOZRU8VTek/WAsnU2fDor/jRP9qeU84B8iu7FRvOEOxlrwV+znM9LiYI0n0OvJJ2/MmndbdV21OtNsQ7JljD6DapcM97G2snUZZ9couPRJZ19uACzM3ycnKo5mUoZahDwOUKa1iVbKR64AgfunFM0M/R2PGm3yuzvfcINcMhmUAYYuSgCqtpjsTt4bRYhgaRPFnshNLdqrGKPhry+yO33Ur9KbP3Tx4+aMrOL5MkDTXjGw2+q/9himevu29qvbym9J0AZCXY2ekeasPzulpkAiPXZGE2nvUHkY7ry8yEfHhB0KTHfFrqXKyoWxuj7ALHHnHEPnMFaB9Dqvsy21z9l/pP6eXiV6CTUr+GnsybivFDeSgjKq8HZvhmu8XzQbPf1NeafU2/e2qulGhB8EyN2lhw88kjyVtzk0X8HwG1uXS
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: maxdl
+      name: polaris-oauth
+      namespace: maxdl-query
+    type: Opaque

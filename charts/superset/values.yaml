@@ -1,0 +1,57 @@
+# =============================================================================
+# Apache Superset Helm values — maxdl (차트 0.15.5 / app 5.0.0)
+# - BI/대시보드. 데이터소스 = Trino(iceberg_* 카탈로그) SQLAlchemy.
+# - 번들 postgresql(메타) + redis(캐시/celery) 사용(단일 노드 개발).
+# - Trino SQLAlchemy 드라이버를 bootstrap 시 설치(이미지 미포함 대비).
+# - 외부 노출: NodePort 30088(정책: 30000번대).
+# =============================================================================
+
+# Trino dialect 설치(공식 이미지에 미포함일 수 있어 명시 설치)
+bootstrapScript: |
+  #!/bin/bash
+  # 메타DB(postgres) 드라이버 + Trino dialect.
+  # Superset 5.0.0 은 /app/.venv 가상환경에서 실행되므로 그 venv 의 pip 로
+  # 설치해야 한다(시스템 pip 설치 시 모듈 미인식). uv 우선, 폴백 venv pip.
+  PIP="/app/.venv/bin/pip"
+  if command -v uv >/dev/null 2>&1; then
+    uv pip install --python /app/.venv/bin/python psycopg2-binary 'trino[sqlalchemy]' || true
+  elif [ -x "$PIP" ]; then
+    "$PIP" install --no-cache-dir psycopg2-binary 'trino[sqlalchemy]' || true
+  else
+    pip install --no-cache-dir psycopg2-binary 'trino[sqlalchemy]' || true
+  fi
+  if [ ! -f ~/bootstrap ]; then echo "maxdl superset bootstrap" > ~/bootstrap; fi
+
+service:
+  type: NodePort
+  port: 8088
+  nodePort:
+    http: 30088
+
+# 번들 의존(기본 enabled 유지, 명시)
+postgresql:
+  enabled: true
+redis:
+  enabled: true
+
+# 단일 노드 리소스 절제
+supersetNode:
+  resources:
+    requests: { cpu: "150m", memory: "512Mi" }
+supersetWorker:
+  resources:
+    requests: { cpu: "100m", memory: "512Mi" }
+
+# 초기 관리자(개발 — 운영 시 시크릿 분리)
+init:
+  adminUser:
+    username: admin
+    password: admin
+    firstname: maxdl
+    lastname: admin
+    email: admin@maxdl.local
+
+# Superset 5.0.0 은 기본 SECRET_KEY 거부 → 강한 키 주입(개발 고정값)
+configOverrides:
+  secret_key: |
+    SECRET_KEY = 'B66vZVWNTpA8ZMUJIn9eru666secicsVa/IjAPw15C/j4zD5Kpn99uNC'

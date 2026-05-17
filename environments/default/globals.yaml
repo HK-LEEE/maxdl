@@ -1,0 +1,54 @@
+# =============================================================================
+# maxdl 전역 환경 설정 (default 환경)
+# - helmfile/매니페스트가 공통 참조하는 단일 진실원천(SSOT).
+# - 비밀값은 절대 여기 두지 않는다(SealedSecret 으로 분리). 여기엔 비-비밀
+#   엔드포인트/포트/이름만 둔다.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 클러스터 / 배포판
+# -----------------------------------------------------------------------------
+cluster:
+  distro: k3d                       # 단일 노드 WSL2, k3s in Docker
+  name: maxdl
+  # k3d 가 주입하는 호스트 별칭. 파드에서 호스트(Docker) 서비스 접근 시 사용.
+  hostAlias: host.k3d.internal
+
+# -----------------------------------------------------------------------------
+# 외부 노출 서비스 포트 (정책: 30000~32767 만 사용)
+# - k3d 클러스터 생성 시 동일 포트로 매핑됨(server:0). 변경 시 클러스터
+#   재생성 또는 port-forward 필요.
+# -----------------------------------------------------------------------------
+nodePorts:
+  trino: 30080                      # Trino coordinator (UI/JDBC 게이트)
+  airbyte: 30081                    # Airbyte webapp
+  airflow: 30082                    # Airflow webserver
+  openmetadata: 30085               # OpenMetadata UI
+  superset: 30088                   # Superset
+  polaris: 30181                    # Polaris Iceberg REST (스파이크/디버그용)
+
+# -----------------------------------------------------------------------------
+# 외부 인프라 (클러스터 외부 — 계획서 §외부 인프라)
+# -----------------------------------------------------------------------------
+external:
+  # 공유 SeaweedFS (maxplatform 운영과 공유 — 전용 버킷만 사용, 운영 버킷 침범 금지)
+  seaweedfs:
+    s3Endpoint: "http://host.k3d.internal:8333"
+    filerEndpoint: "http://host.k3d.internal:8889"
+    region: "kr-dw-pt-001"
+    identity: "datastore"           # 고유 키 사용(원 MAXPLATFORM_DS 키 금지)
+    warehouseBucket: "maxdl-warehouse"   # 레이크하우스 전용 버킷(신규 생성)
+  # 소스 DB 4종 (host 172.168.35.8) — 자격증명은 SealedSecret 으로 주입
+  sourceDb:
+    host: "172.168.35.8"
+    maxplatform:  { type: postgres, port: 5433, database: maxplatform }
+    pfms:         { type: mssql,    port: 1433, database: pfms }
+    maxapex:      { type: postgres, port: 5433, database: maxapex }
+    maxtdoracle:  { type: oracle,   port: 1521, database: MAXTDORACLE, serviceName: xe }
+
+# -----------------------------------------------------------------------------
+# 메달리온 / 카탈로그 명명 규약
+# -----------------------------------------------------------------------------
+lakehouse:
+  catalogs: [bronze, silver, gold]
+  bronzeNamespaces: [maxplatform, pfms, maxapex, maxtdoracle]   # 소스 DB명 = bronze 하위 네임스페이스

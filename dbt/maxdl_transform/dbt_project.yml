@@ -1,0 +1,43 @@
+# =============================================================================
+# maxdl 변환 프로젝트 (dbt-core + dbt-trino)
+# - Bronze(Airbyte 적재) → Silver(정제/정합/dedup) → Gold(MES/LIMS/QMS/SPC 마트)
+# - 전 모델 Iceberg 테이블. 적재모드(append/replica/merge)→증분전략은
+#   seeds/_source_ingestion_modes.csv + 매크로(get_incremental_strategy)로 데이터주도.
+# - 전 파일 500줄 이하, 모델 1파일 원칙(글로벌 규칙).
+# =============================================================================
+name: maxdl_transform
+version: "1.0.0"
+config-version: 2
+profile: maxdl_transform
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# 계층별 기본 구체화/대상 카탈로그(Polaris: bronze/silver/gold)
+# - staging : Bronze 원천을 타입캐스팅한 view (저장 비용 0)
+# - intermediate : Silver, Iceberg 테이블(증분)
+# - marts : Gold, Iceberg 테이블(증분/전체)
+models:
+  maxdl_transform:
+    staging:
+      +materialized: view
+      +database: iceberg_bronze        # 읽기 원천(Polaris bronze 카탈로그)
+      +schema: staging
+    intermediate:
+      +materialized: incremental
+      +database: iceberg_silver
+      +schema: silver
+      +on_schema_change: append_new_columns
+    marts:
+      +materialized: incremental
+      +database: iceberg_gold
+      +schema: gold
+      +on_schema_change: append_new_columns
+
+seeds:
+  maxdl_transform:
+    +database: iceberg_silver
+    +schema: meta

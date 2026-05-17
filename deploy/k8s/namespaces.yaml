@@ -1,0 +1,53 @@
+# =============================================================================
+# maxdl 레이크하우스 네임스페이스 정의
+# - 계획서(§네임스페이스 토폴로지) 기준. SeaweedFS는 클러스터 외부 Docker이므로
+#   네임스페이스 없음. maxdl-compute 는 Spark/Flink 추후 부착용 예약(미배포).
+# - 라벨 part-of=maxdl 로 일괄 조회/정리 가능하도록 통일.
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-system          # 플랫폼 컨트롤러(Sealed Secrets 등)
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: platform }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-catalog         # Apache Polaris + Polaris Postgres 메타스토어
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: catalog }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-ingest          # Airbyte V2 (server/worker/temporal/db + 커넥터 Job)
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: ingest }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-query           # Trino (coordinator + workers)
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: query }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-orchestrate     # Apache Airflow (KubernetesExecutor) + Cosmos
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: orchestrate }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-bi              # Apache Superset
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: bi }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-governance      # OpenMetadata + OpenSearch + OM-번들 Airflow
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: governance }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maxdl-compute         # (예약, 미배포) Spark/Flink 추후 부착용
+  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: compute-reserved }
