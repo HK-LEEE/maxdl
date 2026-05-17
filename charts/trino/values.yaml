@@ -16,12 +16,12 @@ server:
 
 coordinator:
   resources:
-    requests: { cpu: "250m", memory: "1Gi" }
-    limits:   { memory: "2Gi" }
+    requests: { cpu: "500m", memory: "2Gi" }
+    limits:   { memory: "4Gi" }
 worker:
   resources:
-    requests: { cpu: "250m", memory: "1Gi" }
-    limits:   { memory: "2Gi" }
+    requests: { cpu: "500m", memory: "2Gi" }
+    limits:   { memory: "6Gi" }
 
 # 외부 노출: NodePort 30080 (정책: 30000번대)
 service:
