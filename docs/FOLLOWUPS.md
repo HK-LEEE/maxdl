@@ -77,14 +77,19 @@ RBAC 배선 `catalog-bootstrap.sh` idempotent 반영. 자격은 SealedSecret 관
 
 ---
 
-## FU-5. 운영 시크릿 외부화 〔P1·보안·난이도 낮음〕
+## FU-5. 운영 시크릿 외부화 — ✅ 해결 〔P1·보안〕
 
 **배경**: 개발 placeholder 가 chart values 평문 — Superset `SECRET_KEY`·
 admin/admin, Airflow `webserverSecretKey`.
 
 **범위**: 해당 값을 SealedSecret + 차트 `existingSecret`/`extraSecretEnv`
 참조로 전환, 강한 무작위 값 재생성.
-**완료조건**: chart values 평문 비밀 0, grep 스캔 통과, 재배포 정상.
+**해결**: Superset SECRET_KEY→SealedSecret(superset-secret, env 주입)·
+admin 비번→SealedSecret(superset-admin, 배포시 --set)·Airflow
+webserverSecretKey→SealedSecret(airflow-webserver-secret,
+webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
+신규 admin 비번 로그인 검증. SECRET_KEY 회전으로 Superset 메타DB
+초기화(개발, 무가치 상태).
 
 ---
 
@@ -113,11 +118,11 @@ admin/admin, Airflow `webserverSecretKey`.
 
 | 그룹 | 항목 |
 |---|---|
-| ✅ 완료 | FU-1 |
+| ✅ 완료 | FU-1, FU-2, FU-5 |
 | 외부 입력/결정 필요 | FU-4(소스 스펙), FU-3(레지스트리) |
-| **독립 진행 가능** | ~~FU-2~~ ✅ → **FU-5(보안 P1) → FU-6(재현성 P2)** |
+| **독립 진행 가능** | ~~FU-2~~ ✅ ~~FU-5~~ ✅ → **FU-6(재현성 P2)** |
 | 운영 단계 | FU-7 |
 
-권장 진행 순서(독립 항목): ~~FU-2~~ 완료 → **FU-5 → FU-6**
+권장 진행 순서(독립 항목): ~~FU-2~~ ~~FU-5~~ 완료 → **FU-6**
 근거: 보안 위험도(권한>시크릿) 우선, 이후 재현성. FU-2 가 Polaris RBAC 를
 다루므로 `catalog-bootstrap.sh` 변경이 FU-6(helmfile hook) 설계에 선반영됨.

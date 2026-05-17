@@ -14,8 +14,9 @@ config:
   core:
     load_examples: 'False'
 
-# 웹/메타 보안키(개발 고정 — 운영 시 시크릿 분리)
-webserverSecretKey: "maxdl-airflow-dev-secret-key"
+# 웹/메타 보안키: values 평문 금지(FU-5). SealedSecret 참조.
+# (airflow-webserver-secret 의 key 'webserver-secret-key')
+webserverSecretKeySecretName: airflow-webserver-secret
 
 # 번들 메타DB 사용, redis 불필요
 postgresql:

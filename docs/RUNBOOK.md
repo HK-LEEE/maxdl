@@ -68,3 +68,11 @@ cd dbt/maxdl_transform && TRINO_HOST=localhost TRINO_PORT=30080 \
 4. **실 커넥션**: 소스 테이블 스키마 확보 후 `config/ingestion-map.yaml` 의
    `tables` 채우고 Airbyte 커넥션 + dbt 모델 생성(현재 mock 미생성).
 5. drop-with-purge/RBAC 는 `catalog-bootstrap.sh` 에 반영됨(재현 보장).
+
+## 7. Superset 배포 시 admin 비번 주입 (FU-5)
+```bash
+PW=$(kubectl get secret superset-admin -n maxdl-bi -o jsonpath='{.data.admin-password}'|base64 -d)
+helm upgrade --install superset superset/superset --version 0.15.5 -n maxdl-bi \
+  -f charts/superset/values.yaml --set init.adminUser.password="$PW"
+```
+SECRET_KEY/webserverSecretKey 는 SealedSecret 에서 자동 주입(values 평문 0).

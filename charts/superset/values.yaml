@@ -42,16 +42,28 @@ supersetWorker:
   resources:
     requests: { cpu: "100m", memory: "512Mi" }
 
-# 초기 관리자(개발 — 운영 시 시크릿 분리)
+# 초기 관리자. 비밀번호는 values 에 두지 않는다(FU-5).
+# 배포 시 SealedSecret(superset-admin) 에서 읽어 --set 으로 주입:
+#   PW=$(kubectl get secret superset-admin -n maxdl-bi -o jsonpath='{.data.admin-password}'|base64 -d)
+#   helm upgrade ... --set init.adminUser.password="$PW"
 init:
   adminUser:
     username: admin
-    password: admin
     firstname: maxdl
     lastname: admin
     email: admin@maxdl.local
 
-# Superset 5.0.0 은 기본 SECRET_KEY 거부 → 강한 키 주입(개발 고정값)
+# Superset 5.0.0 은 기본 SECRET_KEY 거부. 키 값은 values 에 두지 않고(FU-5)
+# SealedSecret(superset-secret) → env(SUPERSET_SECRET_KEY) 로 주입, config 는 참조만.
 configOverrides:
   secret_key: |
-    SECRET_KEY = 'B66vZVWNTpA8ZMUJIn9eru666secicsVa/IjAPw15C/j4zD5Kpn99uNC'
+    import os
+    SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
+
+# SUPERSET_SECRET_KEY 를 SealedSecret 에서 모든 Superset pod 에 주입
+extraEnvRaw:
+  - name: SUPERSET_SECRET_KEY
+    valueFrom:
+      secretKeyRef:
+        name: superset-secret
+        key: SUPERSET_SECRET_KEY

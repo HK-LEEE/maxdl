@@ -1,0 +1,16 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: superset-admin
+  namespace: maxdl-bi
+spec:
+  encryptedData:
+    admin-password: AgBOb3gY36W2xSR/h9OtSLtBDSkQFOSqjUWs0fh1xjPxHdCOZlxrySoOJSTkdzUkmzOw4qvdftgS3sQHO2mRm5bxvBZMEmAbZdHYXP9VsT7xKvgA8fdMFKN8oo6+5gJ3SZrNh5IVobeeRGb7yU5/hJuPVZ0bRXi+kC8gUOgQ+xaCW+urptGCbw01M6+Jr+h/2OBHAaTMTV7Q8UPgkOIrJkAaadzELd/YuCFzVZMc5GBhFnMIIPCRlXDwMSfxAxO3d7UthF58CzBYAGFRwlFkCN8HTPJPgw5cqdrhQbQHuwQv5C6ou7uB9mA5OJd67zRgUEAbigrHp3Kuj3RHT2oidF+Uj87Yghl0AuFJmPc2tBfZBbpLKkXMZ4MsUpmRUSiB54je11Mw+7/HNSsRuf3DDSgV7c8W5DeNkYEWk9mfx8nAMLDto7WIGa5aq8xDqoow+mrgSmb43S7V2Rfg8WYQjOHVU4/86AqtG/etDDTyZyIy1EGniDC48vE0Xea6fHJpelQrzLmQAbv7TmDHFiUWuV/MJTOaJATd5I7rwuv64lUhxNkNYWViPlG053umUzzvre0N751K5WgIFqSe7u6saZGRzZU1AfKjN6ITqzeFwgmxyv1ekDFQ/kc1Ut9Nuo40Ja8sHfrRtKfTCzo3QXq4LWBa4tydL8DKR2VluYDH+yO50qgVkg4yykPLYbCK/pxjcGCdILzaKiULQJnuhJNCGz+XuS3DEQ==
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: maxdl
+      name: superset-admin
+      namespace: maxdl-bi
+    type: Opaque
