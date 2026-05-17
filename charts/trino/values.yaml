@@ -1,3 +1,6 @@
+image:
+  tag: "481"
+
 # =============================================================================
 # Trino Helm values — maxdl (차트 1.42.2 / app 480, 버전 정책: 안정 최신 핀)
 # - Iceberg REST → Polaris(maxdl-catalog), native S3 → 공유 SeaweedFS.
@@ -47,6 +50,8 @@ catalogs:
     iceberg.rest-catalog.oauth2.credential=${ENV:POLARIS_CREDENTIAL}
     iceberg.rest-catalog.oauth2.scope=PRINCIPAL_ROLE:ALL
     iceberg.rest-catalog.vended-credentials-enabled=false
+    iceberg.rest-catalog.case-insensitive-name-matching=true
+    iceberg.rest-catalog.case-insensitive-name-matching.cache-ttl=1m
     fs.native-s3.enabled=true
     s3.endpoint=http://host.k3d.internal:8333
     s3.region=kr-dw-pt-001
@@ -62,6 +67,8 @@ catalogs:
     iceberg.rest-catalog.oauth2.credential=${ENV:POLARIS_CREDENTIAL}
     iceberg.rest-catalog.oauth2.scope=PRINCIPAL_ROLE:ALL
     iceberg.rest-catalog.vended-credentials-enabled=false
+    iceberg.rest-catalog.case-insensitive-name-matching=true
+    iceberg.rest-catalog.case-insensitive-name-matching.cache-ttl=1m
     fs.native-s3.enabled=true
     s3.endpoint=http://host.k3d.internal:8333
     s3.region=kr-dw-pt-001
@@ -77,6 +84,8 @@ catalogs:
     iceberg.rest-catalog.oauth2.credential=${ENV:POLARIS_CREDENTIAL}
     iceberg.rest-catalog.oauth2.scope=PRINCIPAL_ROLE:ALL
     iceberg.rest-catalog.vended-credentials-enabled=false
+    iceberg.rest-catalog.case-insensitive-name-matching=true
+    iceberg.rest-catalog.case-insensitive-name-matching.cache-ttl=1m
     fs.native-s3.enabled=true
     s3.endpoint=http://host.k3d.internal:8333
     s3.region=kr-dw-pt-001
