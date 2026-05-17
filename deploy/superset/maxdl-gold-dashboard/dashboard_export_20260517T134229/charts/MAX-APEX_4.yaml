@@ -1,0 +1,19 @@
+slice_name: "MAX-APEX \uC81C\uD488"
+description: null
+certified_by: null
+certification_details: null
+viz_type: table
+params:
+  viz_type: table
+  query_mode: raw
+  all_columns:
+  - product_code
+  - product_name
+  - product_grade
+  - plant_code
+  row_limit: 200
+query_context: null
+cache_timeout: null
+uuid: 452bef2c-5344-4dbc-9946-eb289e146193
+version: 1.0.0
+dataset_uuid: 2868eafc-6c10-4a11-a7b6-0d3a72aa346c

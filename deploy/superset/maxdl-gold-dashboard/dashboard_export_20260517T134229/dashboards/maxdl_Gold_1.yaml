@@ -1,0 +1,217 @@
+dashboard_title: "maxdl Gold \uC0D8\uD50C \uB300\uC2DC\uBCF4\uB4DC"
+description: null
+css: null
+slug: maxdl-gold-samples
+certified_by: null
+certification_details: null
+published: true
+uuid: e33850c3-e901-43f5-80b5-b6f6c74c94a7
+position:
+  DASHBOARD_VERSION_KEY: v2
+  ROOT_ID:
+    type: ROOT
+    id: ROOT_ID
+    children:
+    - GRID_ID
+  GRID_ID:
+    type: GRID
+    id: GRID_ID
+    children:
+    - ROW-1
+    - ROW-2
+    - ROW-3
+    - ROW-N-UIJW581K
+    parents:
+    - ROOT_ID
+  HEADER_ID:
+    type: HEADER
+    id: HEADER_ID
+    meta:
+      text: "maxdl Gold \uC0D8\uD50C \uB300\uC2DC\uBCF4\uB4DC"
+  ROW-1:
+    type: ROW
+    id: ROW-1
+    children:
+    - CHART-1
+    - CHART-2
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    meta:
+      background: BACKGROUND_TRANSPARENT
+  CHART-1:
+    type: CHART
+    id: CHART-1
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-1
+    meta:
+      chartId: 1
+      width: 3
+      height: 50
+      sliceName: "\uC0AC\uC6A9\uC790 \uC218(dim_user)"
+  CHART-2:
+    type: CHART
+    id: CHART-2
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-1
+    meta:
+      chartId: 2
+      width: 9
+      height: 50
+      sliceName: "\uC77C\uBCC4 \uB85C\uADF8\uC778 \uD65C\uB3D9"
+  ROW-2:
+    type: ROW
+    id: ROW-2
+    children:
+    - CHART-3
+    - CHART-4
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    meta:
+      background: BACKGROUND_TRANSPARENT
+  CHART-3:
+    type: CHART
+    id: CHART-3
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-2
+    meta:
+      chartId: 3
+      width: 6
+      height: 50
+      sliceName: "\uC11C\uBE44\uC2A4\uC694\uCCAD \uC0C1\uD0DC\uBCC4"
+  CHART-4:
+    type: CHART
+    id: CHART-4
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-2
+    meta:
+      chartId: 4
+      width: 6
+      height: 50
+      sliceName: "MAX-APEX \uC81C\uD488"
+  ROW-3:
+    type: ROW
+    id: ROW-3
+    children:
+    - CHART-5
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    meta:
+      background: BACKGROUND_TRANSPARENT
+  CHART-5:
+    type: CHART
+    id: CHART-5
+    children: []
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-3
+    meta:
+      chartId: 5
+      width: 12
+      height: 50
+      sliceName: "SPC \uAD00\uC81C\uD55C\uACC4"
+  ROW-N-UIJW581K:
+    children:
+    - CHART-6RV5W0JT
+    - CHART-IR38W3YG
+    - CHART-5UY8IN0Z
+    - CHART-A45HBBCF
+    - CHART-ZK1DPKUD
+    id: ROW-N-UIJW581K
+    meta:
+      '0': ROOT_ID
+      background: BACKGROUND_TRANSPARENT
+    type: ROW
+    parents:
+    - ROOT_ID
+    - GRID_ID
+  CHART-6RV5W0JT:
+    children: []
+    id: CHART-6RV5W0JT
+    meta:
+      chartId: 1
+      height: 50
+      sliceName: "\uC0AC\uC6A9\uC790 \uC218(dim_user)"
+      uuid: a7145ef2-62df-49eb-bb1b-b730ca3910bd
+      width: 4
+    type: CHART
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-N-UIJW581K
+  CHART-IR38W3YG:
+    children: []
+    id: CHART-IR38W3YG
+    meta:
+      chartId: 5
+      height: 50
+      sliceName: "SPC \uAD00\uC81C\uD55C\uACC4"
+      uuid: ef248b85-37d1-4e90-9280-240f7d856b17
+      width: 4
+    type: CHART
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-N-UIJW581K
+  CHART-5UY8IN0Z:
+    children: []
+    id: CHART-5UY8IN0Z
+    meta:
+      chartId: 3
+      height: 50
+      sliceName: "\uC11C\uBE44\uC2A4\uC694\uCCAD \uC0C1\uD0DC\uBCC4"
+      uuid: 0e3472eb-314c-4f24-ab8c-62802ec452e5
+      width: 4
+    type: CHART
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-N-UIJW581K
+  CHART-A45HBBCF:
+    children: []
+    id: CHART-A45HBBCF
+    meta:
+      chartId: 4
+      height: 50
+      sliceName: "MAX-APEX \uC81C\uD488"
+      uuid: 452bef2c-5344-4dbc-9946-eb289e146193
+      width: 4
+    type: CHART
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-N-UIJW581K
+  CHART-ZK1DPKUD:
+    children: []
+    id: CHART-ZK1DPKUD
+    meta:
+      chartId: 2
+      height: 50
+      sliceName: "\uC77C\uBCC4 \uB85C\uADF8\uC778 \uD65C\uB3D9"
+      uuid: 0b5994cc-dd16-49fe-9501-fffd041df701
+      width: 4
+    type: CHART
+    parents:
+    - ROOT_ID
+    - GRID_ID
+    - ROW-N-UIJW581K
+metadata:
+  refresh_frequency: 0
+  color_scheme: supersetColors
+theme_uuid: null
+version: 1.0.0

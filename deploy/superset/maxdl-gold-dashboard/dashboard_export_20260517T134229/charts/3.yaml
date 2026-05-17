@@ -1,0 +1,20 @@
+slice_name: "\uC11C\uBE44\uC2A4\uC694\uCCAD \uC0C1\uD0DC\uBCC4"
+description: null
+certified_by: null
+certification_details: null
+viz_type: table
+params:
+  viz_type: table
+  query_mode: raw
+  all_columns:
+  - site_id
+  - status
+  - request_count
+  - urgent_count
+  - periodic_count
+  row_limit: 200
+query_context: null
+cache_timeout: null
+uuid: 0e3472eb-314c-4f24-ab8c-62802ec452e5
+version: 1.0.0
+dataset_uuid: 976a4236-0509-4da0-a189-4fb8a94876a6

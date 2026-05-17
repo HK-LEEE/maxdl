@@ -1,0 +1,23 @@
+slice_name: "SPC \uAD00\uC81C\uD55C\uACC4"
+description: null
+certified_by: null
+certification_details: null
+viz_type: table
+params:
+  viz_type: table
+  query_mode: raw
+  all_columns:
+  - factor_code
+  - factor_desc
+  - lsl
+  - lcl
+  - cl
+  - ucl
+  - usl
+  - unit
+  row_limit: 200
+query_context: null
+cache_timeout: null
+uuid: ef248b85-37d1-4e90-9280-240f7d856b17
+version: 1.0.0
+dataset_uuid: a3c73fc1-4159-4471-a5ee-3bf039946e8b

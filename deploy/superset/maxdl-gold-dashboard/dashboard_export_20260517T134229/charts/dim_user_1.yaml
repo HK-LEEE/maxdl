@@ -1,0 +1,17 @@
+slice_name: "\uC0AC\uC6A9\uC790 \uC218(dim_user)"
+description: null
+certified_by: null
+certification_details: null
+viz_type: big_number_total
+params:
+  viz_type: big_number_total
+  metric:
+    label: COUNT(*)
+    expressionType: SQL
+    sqlExpression: COUNT(*)
+  adhoc_filters: []
+query_context: null
+cache_timeout: null
+uuid: a7145ef2-62df-49eb-bb1b-b730ca3910bd
+version: 1.0.0
+dataset_uuid: 41ae33cf-bb04-4768-96cf-9ff0f129192a
