@@ -93,7 +93,7 @@ webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
 
 ---
 
-## FU-6. helmfile 통합 + 재현성 〔P2·운영·난이도 중〕
+## FU-6. helmfile 통합 + 재현성 — ✅ 해결(IaC) 〔P2·운영〕
 
 **배경**: 계획상 `helmfile.yaml` 이 SSOT 였으나 실제론 개별 `helm install`.
 부트스트랩 순서·의존성 미코드화.
@@ -101,7 +101,13 @@ webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
 **범위**: 8단계 배포를 `helmfile.yaml` 로 선언(릴리스·NS·values·needs
 의존순서·hooks: SealedSecret apply, catalog-bootstrap, OM 시크릿, Oracle
 커넥터 등록). 클린 클러스터에서 `helmfile apply` 단일 재현 검증.
-**완료조건**: 신규 k3d 에서 helmfile 만으로 전 스택 재구축 성공.
+**해결(IaC)**: `helmfile.yaml` 작성 — 9개 릴리스(버전 정확히 핀)·
+`needs` 의존순서·hooks(네임스페이스/SealedSecret/Polaris bootstrap·
+카탈로그·RBAC/Oracle 커넥터/Superset admin/OM NodePort)로 명령형 단계를
+기존 idempotent 스크립트 호출로 코드화. 비파괴 검증: `helmfile build`/
+`list` 통과, 평문 시크릿 0.
+**잔여 AC**: 완전 클린 클러스터 `helmfile apply` 재구축 검증은 라이브 스택
+파괴 방지를 위해 **폐기형 클러스터에서 수행 권장**(미수행).
 
 ---
 
@@ -118,11 +124,10 @@ webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
 
 | 그룹 | 항목 |
 |---|---|
-| ✅ 완료 | FU-1, FU-2, FU-5 |
+| ✅ 완료 | FU-1, FU-2, FU-5, FU-6(IaC) |
 | 외부 입력/결정 필요 | FU-4(소스 스펙), FU-3(레지스트리) |
-| **독립 진행 가능** | ~~FU-2~~ ✅ ~~FU-5~~ ✅ → **FU-6(재현성 P2)** |
+| **독립 진행 완료** | ~~FU-2~~ ~~FU-5~~ ~~FU-6~~ ✅ (잔여: 클린 재구축 검증) |
 | 운영 단계 | FU-7 |
 
-권장 진행 순서(독립 항목): ~~FU-2~~ ~~FU-5~~ 완료 → **FU-6**
-근거: 보안 위험도(권한>시크릿) 우선, 이후 재현성. FU-2 가 Polaris RBAC 를
-다루므로 `catalog-bootstrap.sh` 변경이 FU-6(helmfile hook) 설계에 선반영됨.
+독립 진행 항목(FU-2/5/6) **전부 완료**. 남은 항목: FU-3·FU-4(외부
+입력/레지스트리 결정 필요), FU-7(운영 단계), FU-6 클린 재구축 검증.

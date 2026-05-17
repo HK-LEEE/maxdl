@@ -1,0 +1,165 @@
+# =============================================================================
+# maxdl 레이크하우스 — 전 스택 선언적 배포 (helmfile)
+# ---------------------------------------------------------------------------
+# 클린 k3d 클러스터에서 `helmfile apply` 단일 명령으로 0~8단계 재구축.
+# - 의존순서: needs(namespace/name) 로 강제.
+# - 명령형 단계(네임스페이스/SealedSecret/Polaris bootstrap·카탈로그/Oracle
+#   커넥터/Superset admin/OM NodePort)는 hooks 로 기존 idempotent 스크립트·
+#   매니페스트를 호출(중복 작성 금지·단일 진실원천 유지).
+# - 버전 정책: 배포 검증된 안정 버전 정확히 핀.
+# 검증: `helmfile build`(상태 렌더)·`helmfile lint`. 클린 전체 재구축은
+#   폐기형 클러스터에서 수행 권장(라이브 스택 파괴 방지 — FU-6 잔여 AC).
+# =============================================================================
+environments:
+  default:
+    values:
+      - environments/default/globals.yaml
+---
+repositories:
+  - name: sealed-secrets
+    url: https://bitnami-labs.github.io/sealed-secrets
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+  - name: polaris
+    url: https://downloads.apache.org/polaris/helm-chart
+  - name: trino
+    url: https://trinodb.github.io/charts
+  - name: airbyte-v2
+    url: https://airbytehq.github.io/charts
+  - name: apache-airflow
+    url: https://airflow.apache.org
+  - name: superset
+    url: https://apache.github.io/superset
+  - name: open-metadata
+    url: https://helm.open-metadata.org
+
+# 공통 hook helper: 경로는 helmfile 디렉토리 기준
+releases:
+  # --- 1) Sealed Secrets 컨트롤러 + 네임스페이스/시크릿 적용 ---
+  - name: sealed-secrets
+    namespace: maxdl-system
+    chart: sealed-secrets/sealed-secrets
+    version: 2.18.5
+    set:
+      - name: fullnameOverride
+        value: sealed-secrets-controller
+    hooks:
+      - events: [presync]
+        showlogs: true
+        command: kubectl
+        args: ["apply", "-f", "deploy/k8s/namespaces.yaml"]
+      - events: [postsync]
+        showlogs: true
+        command: sh
+        args: ["-c", "kubectl -n maxdl-system rollout status deploy/sealed-secrets-controller --timeout=180s && kubectl apply -f deploy/k8s/sealed/"]
+
+  # --- 2) Polaris 메타스토어(PostgreSQL) — 자격은 SealedSecret 바인딩 ---
+  - name: polaris-pg
+    namespace: maxdl-catalog
+    chart: bitnami/postgresql
+    version: 18.6.6
+    needs: [maxdl-system/sealed-secrets]
+    set:
+      - name: fullnameOverride
+        value: polaris-postgresql
+      - name: auth.username
+        value: polaris
+      - name: auth.database
+        value: polaris
+      - name: auth.existingSecret
+        value: polaris-persistence
+      - name: auth.secretKeys.userPasswordKey
+        value: password
+      - name: auth.secretKeys.adminPasswordKey
+        value: password
+      - name: primary.persistence.size
+        value: 4Gi
+      - name: primary.resources.requests.memory
+        value: 256Mi
+
+  # --- 3) Polaris (+ realm bootstrap + 카탈로그/RBAC) ---
+  - name: polaris
+    namespace: maxdl-catalog
+    chart: polaris/polaris
+    version: 1.4.1
+    needs: [maxdl-catalog/polaris-pg]
+    values: [charts/polaris/values.yaml]
+    hooks:
+      - events: [presync]
+        showlogs: true
+        command: sh
+        args: ["-c", "kubectl -n maxdl-catalog rollout status statefulset/polaris-postgresql --timeout=180s; kubectl apply -f deploy/k8s/polaris/bootstrap-job.yaml; kubectl -n maxdl-catalog wait --for=condition=complete job/polaris-bootstrap --timeout=300s"]
+      - events: [postsync]
+        showlogs: true
+        command: sh
+        args: ["-c", "kubectl -n maxdl-catalog rollout status deploy/polaris --timeout=240s && bash deploy/k8s/polaris/catalog-bootstrap.sh"]
+
+  # --- 4) Trino (Iceberg REST → Polaris, native S3 → SeaweedFS) ---
+  - name: trino
+    namespace: maxdl-query
+    chart: trino/trino
+    version: 1.42.2
+    needs: [maxdl-catalog/polaris]
+    values: [charts/trino/values.yaml]
+
+  # --- 5) Airbyte V2 (+ 커뮤니티 Oracle 커스텀 커넥터 등록) ---
+  - name: airbyte
+    namespace: maxdl-ingest
+    chart: airbyte-v2/airbyte
+    version: 2.1.0
+    needs: [maxdl-system/sealed-secrets]
+    values: [charts/airbyte/values.yaml]
+    hooks:
+      - events: [postsync]
+        showlogs: true
+        command: sh
+        args: ["-c", "kubectl -n maxdl-ingest rollout status deploy/airbyte-server --timeout=600s && bash deploy/k8s/airbyte/register-oracle-connector.sh"]
+
+  # --- 6) Airflow (KubernetesExecutor) ---
+  - name: airflow
+    namespace: maxdl-orchestrate
+    chart: apache-airflow/airflow
+    version: 1.21.0
+    needs: [maxdl-system/sealed-secrets]
+    values: [charts/airflow/values.yaml]
+
+  # --- 7) Superset (admin 비번은 SealedSecret → postsync 재설정) ---
+  - name: superset
+    namespace: maxdl-bi
+    chart: superset/superset
+    version: 0.15.5
+    needs: [maxdl-system/sealed-secrets, maxdl-query/trino]
+    values: [charts/superset/values.yaml]
+    setString:
+      # 비밀 아님 — 차트 init 통과용 임시 placeholder. postsync 훅이 즉시
+      # SealedSecret(superset-admin) 의 실제 강력 비번으로 재설정한다.
+      - name: init.adminUser.password
+        value: PLACEHOLDER-overwritten-by-postsync
+    hooks:
+      - events: [postsync]
+        showlogs: true
+        command: sh
+        args: ["-c", "kubectl -n maxdl-bi rollout status deploy/superset --timeout=600s && PW=$(kubectl get secret superset-admin -n maxdl-bi -o jsonpath='{.data.admin-password}'|base64 -d) && kubectl -n maxdl-bi exec deploy/superset -- superset fab reset-password --username admin --password \"$PW\""]
+
+  # --- 8a) OpenMetadata 의존성 (MySQL+OpenSearch+Airflow) ---
+  - name: openmetadata-deps
+    namespace: maxdl-governance
+    chart: open-metadata/openmetadata-dependencies
+    version: 1.12.8
+    needs: [maxdl-system/sealed-secrets]
+    set:
+      - name: airflow.logs.persistence.enabled       # k3d RWO — RWX PVC 회피
+        value: "false"
+
+  # --- 8b) OpenMetadata 본체 (+ NodePort 30085) ---
+  - name: openmetadata
+    namespace: maxdl-governance
+    chart: open-metadata/openmetadata
+    version: 1.12.8
+    needs: [maxdl-governance/openmetadata-deps]
+    values: [charts/openmetadata/values.yaml]
+    hooks:
+      - events: [postsync]
+        showlogs: true
+        command: kubectl
+        args: ["apply", "-f", "deploy/k8s/openmetadata/nodeport-svc.yaml"]
