@@ -1,0 +1,22 @@
+slice_name: "\uC77C\uBCC4 \uB85C\uADF8\uC778 \uD65C\uB3D9"
+description: null
+certified_by: null
+certification_details: null
+viz_type: table
+params:
+  viz_type: table
+  query_mode: raw
+  all_columns:
+  - login_date
+  - user_id
+  - login_attempts
+  - success_count
+  - fail_count
+  order_by_cols:
+  - '["login_date", false]'
+  row_limit: 200
+query_context: null
+cache_timeout: null
+uuid: 0b5994cc-dd16-49fe-9501-fffd041df701
+version: 1.0.0
+dataset_uuid: 735c001e-52d6-4ff6-a9c5-963706e97fe5
