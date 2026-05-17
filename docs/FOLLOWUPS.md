@@ -131,3 +131,24 @@ webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
 
 독립 진행 항목(FU-2/5/6) **전부 완료**. 남은 항목: FU-3·FU-4(외부
 입력/레지스트리 결정 필요), FU-7(운영 단계), FU-6 클린 재구축 검증.
+
+
+## FU-4 진행 결과 (2026-05-17)
+
+- ✅ **maxplatform/maxapex (Postgres)**: 전체 테이블 Bronze 적재 성공, Trino
+  실데이터 조회 검증. 커서 규칙 정밀화 적용:
+  **merge = PK 존재 AND temporal 커서가 NOT NULL** / 그 외 replica
+  (Airbyte Postgres 소스는 nullable 커서를 incremental 에서 거부 → 전체 실패).
+- ✅ maxtdoracle (Oracle): 커넥션 검증 완료(소스 빈 테이블, replica 분류).
+- ⚠️ **pfms (MSSQL) 한계 (후속 과제 FU-4b)**: 소스 테이블명이 대문자
+  (`PBATPRCDAT` 등). Airbyte S3-Data-Lake 목적지는 connection `aliasName`
+  무시하고 `stream.name` 을 Iceberg 테이블명으로 사용. Trino Iceberg 커넥터는
+  소문자 식별자만 load 가능(case-insensitive 옵션 없음). → 소스 매칭(대문자
+  필요)과 Trino 조회(소문자 필요)가 양립 불가. 4개 테이블.
+  옵션: (a) sync 후 Polaris renameTable 자동화(merge엔 부적합/replica 매 sync
+  재생성), (b) 별도 케이스 변환/뷰 계층, (c) Spark 등 case-sensitive 엔진으로
+  해당 네임스페이스 조회. 결정 필요.
+- 운영 주의: `created_at`-만 커서인 테이블은 원천 UPDATE 미포착 가능 → 추후
+  updated 컬럼 도입/주기 replica 검토(기존 기재 유지).
+- 인시던트 학습: 디스크 회복 시 CoreDNS `host.k3d.internal` 항목 소실 →
+  복구 필요(`kubectl patch cm coredns`). RUNBOOK 참조.

@@ -94,7 +94,8 @@ ensure_cr bronze cr-bronze-rw; grant bronze cr-bronze-rw CATALOG_MANAGE_CONTENT
 bind pr-airbyte bronze cr-bronze-rw
 # svc-trino: bronze 읽기 전용 + silver/gold manage
 ensure_cr bronze cr-bronze-ro
-for P in TABLE_READ_DATA TABLE_LIST TABLE_READ_PROPERTIES NAMESPACE_LIST NAMESPACE_READ_PROPERTIES CATALOG_READ_PROPERTIES; do
+# VIEW_* 부재 시 Trino "Failed to list views" → 테이블 해석 전체 실패(검증됨)
+for P in TABLE_READ_DATA TABLE_LIST TABLE_READ_PROPERTIES NAMESPACE_LIST NAMESPACE_READ_PROPERTIES CATALOG_READ_PROPERTIES VIEW_LIST VIEW_READ_PROPERTIES VIEW_FULL_METADATA; do
   grant bronze cr-bronze-ro "$P"
 done
 bind pr-trino bronze cr-bronze-ro
