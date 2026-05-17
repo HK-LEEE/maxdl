@@ -57,8 +57,10 @@ cd dbt/maxdl_transform && TRINO_HOST=localhost TRINO_PORT=30080 \
 
 ## 6. 알려진 후속 과제 (운영 전 필수)
 
-1. **Oracle 인제스션 블로커**: Airbyte community 에 Oracle 은 enterprise 커넥터만
-   존재(OSS 403). 별도 트랙 필요(커스텀 community 이미지/Debezium-Oracle/enterprise).
+1. ~~Oracle 인제스션 블로커~~ **해결(FU-1, A안)**: 커뮤니티
+   `airbyte/source-oracle:0.5.8` 를 커스텀 커넥터로 등록 → entitlement 우회,
+   connection-check 성공. 재현: `deploy/k8s/airbyte/register-oracle-connector.sh`
+   (반드시 in-cluster 호출 — port-forward 시 create_custom 이 HTTP 000).
 2. **권한 최소화**: Polaris/Airbyte 가 스파이크용 `root` 사용 → 전용 principal·
    최소권한으로 교체.
 3. **Airflow 커스텀 이미지**: Cosmos + dbt-trino + dbt 프로젝트 동봉 이미지 +
