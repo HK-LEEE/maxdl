@@ -1,0 +1,85 @@
+# =============================================================================
+# Trino Helm values — maxdl (차트 1.42.2 / app 480, 버전 정책: 안정 최신 핀)
+# - Iceberg REST → Polaris(maxdl-catalog), native S3 → 공유 SeaweedFS.
+# - 레이어별 Polaris 카탈로그(bronze/silver/gold) → Trino 카탈로그 3개 매핑.
+# - SeaweedFS 는 STS/vended 미지원 → vended-credentials-enabled=false +
+#   정적 S3 키(seaweedfs-s3 시크릿) + path-style(계획서 §리스크 1·2).
+# - 비밀값은 env(secretKeyRef) 주입, 카탈로그 파일은 ${ENV:...} 참조.
+# =============================================================================
+
+# 단일 노드 개발: 코디네이터1 + 워커1, 리소스 절제
+server:
+  workers: 1
+
+coordinator:
+  resources:
+    requests: { cpu: "250m", memory: "1Gi" }
+    limits:   { memory: "2Gi" }
+worker:
+  resources:
+    requests: { cpu: "250m", memory: "1Gi" }
+    limits:   { memory: "2Gi" }
+
+# 외부 노출: NodePort 30080 (정책: 30000번대)
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 30080
+
+# 비밀값 주입(모든 pod 공통): Polaris OAuth2 / SeaweedFS S3 정적 키
+env:
+  - name: POLARIS_CREDENTIAL          # "root:<secret>" (스파이크) — polaris-oauth
+    valueFrom: { secretKeyRef: { name: polaris-oauth, key: credential } }
+  - name: S3_ACCESS_KEY
+    valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: accessKey } }
+  - name: S3_SECRET_KEY
+    valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
+
+# 레이어별 Iceberg 카탈로그(Polaris warehouse = 레이어명)
+# 공통 블록: REST→Polaris OAUTH2 + native S3→SeaweedFS path-style.
+catalogs:
+  iceberg_bronze: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://polaris.maxdl-catalog.svc.cluster.local:8181/api/catalog
+    iceberg.rest-catalog.warehouse=bronze
+    iceberg.rest-catalog.security=OAUTH2
+    iceberg.rest-catalog.oauth2.credential=${ENV:POLARIS_CREDENTIAL}
+    iceberg.rest-catalog.oauth2.scope=PRINCIPAL_ROLE:ALL
+    iceberg.rest-catalog.vended-credentials-enabled=false
+    fs.native-s3.enabled=true
+    s3.endpoint=http://host.k3d.internal:8333
+    s3.region=kr-dw-pt-001
+    s3.path-style-access=true
+    s3.aws-access-key=${ENV:S3_ACCESS_KEY}
+    s3.aws-secret-key=${ENV:S3_SECRET_KEY}
+  iceberg_silver: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://polaris.maxdl-catalog.svc.cluster.local:8181/api/catalog
+    iceberg.rest-catalog.warehouse=silver
+    iceberg.rest-catalog.security=OAUTH2
+    iceberg.rest-catalog.oauth2.credential=${ENV:POLARIS_CREDENTIAL}
+    iceberg.rest-catalog.oauth2.scope=PRINCIPAL_ROLE:ALL
+    iceberg.rest-catalog.vended-credentials-enabled=false
+    fs.native-s3.enabled=true
+    s3.endpoint=http://host.k3d.internal:8333
+    s3.region=kr-dw-pt-001
+    s3.path-style-access=true
+    s3.aws-access-key=${ENV:S3_ACCESS_KEY}
+    s3.aws-secret-key=${ENV:S3_SECRET_KEY}
+  iceberg_gold: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://polaris.maxdl-catalog.svc.cluster.local:8181/api/catalog
+    iceberg.rest-catalog.warehouse=gold
+    iceberg.rest-catalog.security=OAUTH2
+    iceberg.rest-catalog.oauth2.credential=${ENV:POLARIS_CREDENTIAL}
+    iceberg.rest-catalog.oauth2.scope=PRINCIPAL_ROLE:ALL
+    iceberg.rest-catalog.vended-credentials-enabled=false
+    fs.native-s3.enabled=true
+    s3.endpoint=http://host.k3d.internal:8333
+    s3.region=kr-dw-pt-001
+    s3.path-style-access=true
+    s3.aws-access-key=${ENV:S3_ACCESS_KEY}
+    s3.aws-secret-key=${ENV:S3_SECRET_KEY}

@@ -1,0 +1,32 @@
+# =============================================================================
+# Airbyte OSS Helm values — maxdl (차트 V2 airbyte-v2/airbyte 2.1.0)
+# - 계획서: Helm 차트 V2 필수(V1/abctl 금지). edition=community.
+# - Airbyte 내부 저장소(로그/상태)는 번들 minio+postgresql 사용 →
+#   공유 SeaweedFS(운영 데이터) 와 의도적으로 격리(시크릿/버킷 오염 방지).
+#   ※ 인제스션 "목적지"(Iceberg/Polaris→SeaweedFS)는 커넥션 설정에서 별도 지정.
+# - 외부 노출: webapp NodePort 30081(정책: 30000번대).
+# =============================================================================
+
+global:
+  edition: community
+  # 브라우저 접근 URL(웹앱 NodePort)
+  airbyteUrl: "http://localhost:30081"
+  # 내부 메타 DB: 번들 postgresql(아래 postgresql.enabled=true)
+  database:
+    type: internal
+  # 내부 객체 저장소: 번들 minio (Airbyte 로그/상태 전용)
+  storage:
+    type: minio
+
+# 번들 의존 컴포넌트 — 단일 노드 개발용, 명시적 유지
+postgresql:
+  enabled: true
+minio:
+  enabled: true
+
+# 웹 UI 외부 노출
+webapp:
+  service:
+    type: NodePort
+    port: 80
+    nodePort: 30081

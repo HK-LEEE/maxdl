@@ -1,0 +1,32 @@
+# =============================================================================
+# Bronze 원천 정의 (Polaris bronze 카탈로그 = Trino catalog `iceberg_bronze`)
+# - 소스 DB별 네임스페이스(스키마) = maxplatform/pfms/maxapex/maxtdoracle.
+# - 실제 테이블은 소스 스키마 확보 후 각 source.tables 에 추가(mock 미생성).
+#   예: - name: <table>  # loaded_at_field, columns, freshness 등 명시
+# =============================================================================
+version: 2
+
+sources:
+  - name: maxplatform
+    database: iceberg_bronze        # Trino catalog
+    schema: maxplatform             # Polaris bronze 하위 네임스페이스
+    description: "MES/공통 (PostgreSQL maxplatform) Bronze 원천"
+    tables: []
+
+  - name: pfms
+    database: iceberg_bronze
+    schema: pfms
+    description: "MAX-APEX 공정/품질 (MSSQL pfms) Bronze 원천"
+    tables: []
+
+  - name: maxapex
+    database: iceberg_bronze
+    schema: maxapex
+    description: "MAX-APEX (PostgreSQL maxapex) Bronze 원천"
+    tables: []
+
+  - name: maxtdoracle
+    database: iceberg_bronze
+    schema: maxtdoracle
+    description: "레거시 Oracle (MAXTDORACLE) Bronze 원천 — 인제스션 별도 트랙"
+    tables: []

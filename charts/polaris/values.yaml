@@ -1,0 +1,82 @@
+# =============================================================================
+# Apache Polaris (Iceberg REST 카탈로그) Helm values — maxdl
+# - 차트/앱 1.4.1 핀(버전 정책: 호환 확인된 안정 최신). incubating 이므로
+#   REST 계약 뒤로 엔진을 격리(계획서 §리스크 3).
+# - 메타스토어: relational-jdbc → 외부 polaris-postgresql (in-memory 금지).
+# - 스토리지: 공유 SeaweedFS S3 정적 자격증명(STS/vended 미지원 — 계획서 §리스크 2).
+#   S3 endpoint/path-style 는 차트가 아니라 "카탈로그 생성 시" 지정한다
+#   (deploy/k8s/polaris/catalog-bootstrap 참조).
+# =============================================================================
+
+image:
+  repository: apache/polaris
+  tag: "1.4.1"                 # 차트 1.4.1 정합. 정확히 핀.
+  pullPolicy: IfNotPresent
+
+# 단일 노드 개발 환경 리소스(과다 점유 방지)
+resources:
+  requests: { cpu: "100m", memory: "512Mi" }
+  limits:   { memory: "1Gi" }
+
+# 유효 realm 목록. 첫 항목이 기본 realm. bootstrap 시 동일 realm 사용.
+realmContext:
+  type: default
+  realms:
+    - POLARIS
+
+# 카탈로그 스토리지 타입: S3 만 사용(SeaweedFS S3 호환)
+features:
+  SUPPORTED_CATALOG_STORAGE_TYPES:
+    - S3
+
+# 메타스토어: 외부 PostgreSQL(JDBC). 자격증명은 SealedSecret 에서 주입.
+persistence:
+  type: relational-jdbc
+  relationalJdbc:
+    secret:
+      name: polaris-persistence      # deploy/k8s/sealed/polaris-persistence.*
+      username: username
+      password: password
+      jdbcUrl: jdbcUrl
+
+# 서버 레벨 S3 정적 자격증명(SeaweedFS datastore identity).
+# endpoint/region/path-style 는 카탈로그 단위로 별도 지정.
+storage:
+  secret:
+    name: seaweedfs-s3               # maxdl-catalog 의 SealedSecret
+    awsAccessKeyId: accessKey
+    awsSecretAccessKey: secretKey
+
+# 내부 OAuth2 토큰 서비스(엔진은 client-credentials 로 토큰 발급).
+authentication:
+  type: internal
+  authenticator:
+    type: default
+
+# 외부 노출: NodePort 30181 (정책: 30000번대, 스파이크/디버그용)
+# ports 는 배열 스키마(첫 항목이 암묵적 HTTP 포트).
+service:
+  type: NodePort
+  ports:
+    - name: polaris-http
+      port: 8181
+      targetPort: 8181
+      nodePort: 30181
+      protocol: TCP
+
+# AWS SDK 가 SeaweedFS 커스텀 엔드포인트를 path-style 로 호출하도록 강제.
+# (Polaris→S3 메타데이터 IO 경로. 카탈로그 endpoint 와 스타일 일치 필수.)
+advancedConfig:
+  quarkus.http.access-log.enabled: true
+
+# Polaris 서버가 S3 메타데이터 IO 시 사용할 표준 AWS SDK 자격증명 env.
+# storage.secret 의 점(.) 포함 프로퍼티명이 AWS SDK 기본 체인에 인식되지
+# 않으므로, SDK 가 명시적으로 확인하는 표준 env 를 직접 주입한다(정적 키,
+# SeaweedFS STS/vended 미지원 대응 — 계획서 §리스크 2).
+extraEnv:
+  - name: AWS_ACCESS_KEY_ID
+    valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: accessKey } }
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
+  - name: AWS_REGION
+    value: "kr-dw-pt-001"

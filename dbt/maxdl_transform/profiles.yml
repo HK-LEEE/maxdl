@@ -1,0 +1,19 @@
+# =============================================================================
+# dbt-trino 연결 프로파일 — maxdl
+# - dbt 는 Trino 만 바라본다(Polaris/S3 는 Trino 가 처리). 비밀값은 env 주입.
+# - Trino 무인증(개발) → method=none. 운영 전 인증 도입 시 method 교체.
+# - database(catalog)/schema 는 모델 config 가 계층별로 override.
+# =============================================================================
+maxdl_transform:
+  target: default
+  outputs:
+    default:
+      type: trino
+      method: none
+      user: "{{ env_var('TRINO_USER', 'dbt') }}"
+      host: "{{ env_var('TRINO_HOST', 'trino.maxdl-query.svc.cluster.local') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | int }}"
+      http_scheme: http
+      catalog: "{{ env_var('TRINO_CATALOG', 'iceberg_silver') }}"
+      schema: "{{ env_var('TRINO_SCHEMA', 'silver') }}"
+      threads: 4
