@@ -1,13 +1,12 @@
 """
-maxdl DAG 등록 — 소스 4종 + 변환
----------------------------------------------------------------------------
-팩토리(maxdl_factory)를 호출해 DAG 를 globals 에 노출만 한다(소형 유지).
-airbyte_connection_id 는 실 소스 테이블 확정 후 ingestion-map 기반으로
-주입한다(현재 None → placeholder 태스크로 안전 파싱).
+maxdl DAG 등록 (FU-3) — 팩토리 호출만(소형 유지)
+소스 4개 ingest DAG + Gold 변환 DAG 를 globals 에 노출.
+Airbyte 커넥션 ID 는 Airflow Variable `airbyte_conn_<source>` 로 주입
+(배포 후 1회 설정; ingestion-map 기반).
 """
-from maxdl_factory import build_ingest_dag, build_transform_dag
+from maxdl_factory import build_ingest_dag, build_transform_dag, SOURCES
 
-for _src in ("maxplatform", "pfms", "maxapex", "maxtdoracle"):
-    globals()[f"ingest_{_src}"] = build_ingest_dag(_src, airbyte_connection_id=None)
+for _s in SOURCES:
+    globals()[f"ingest_{_s}"] = build_ingest_dag(_s)
 
-transform_silver_gold = build_transform_dag()
+transform_gold = build_transform_dag()

@@ -1,89 +1,116 @@
 """
-maxdl DAG 팩토리 — 공통 빌더
+maxdl DAG 팩토리 (FU-3) — Cosmos 기반 dbt 오케스트레이션 + Airbyte 트리거
 ---------------------------------------------------------------------------
-계획서 §6 오케스트레이션 패턴을 재사용 가능한 팩토리로 구현.
- - 소스별 DAG: Airbyte 동기화 트리거 → 완료 센서 → Cosmos dbt(staging) → DQ
- - 전 소스 완료 시 Airflow Dataset 으로 변환 DAG(silver/gold) 자동 트리거
-파일 500줄 이하·소형 유지를 위해 DAG 본체는 이 팩토리를 호출만 한다.
-
-의존(커스텀 Airflow 이미지에 포함 필요 — 후속 wiring):
-  apache-airflow-providers-airbyte, astronomer-cosmos[kubernetes],
-  dbt-core, dbt-trino. 미포함 시 import 시점에 실패하므로 try-import 로
-  파싱 안전을 확보(플랫폼만 가동된 현 단계에서 DAG 목록 깨짐 방지).
+- 소스별 DAG: Airbyte 동기화(API 트리거+폴링) → Cosmos dbt(staging+silver, 해당 소스)
+- 전 소스 완료 → Dataset 트리거로 Gold 변환 DAG(Cosmos marts)
+- Cosmos: LoadMode.DBT_MANIFEST(이미지에 manifest 베이크) + ExecutionMode.LOCAL
+  (KubernetesExecutor 가 태스크 pod 격리하므로 LOCAL 이 효율적)
+환경변수(차트 env 주입): TRINO_HOST/PORT/USER, AIRBYTE_* (sync 트리거용)
 """
 from __future__ import annotations
 
+import os
+import time
 from datetime import datetime
 
-from airflow import DAG
-from airflow.datasets import Dataset
+from airflow.sdk import DAG
+from airflow.sdk import Asset
+from airflow.providers.standard.operators.python import PythonOperator
 
-# 소스별 Bronze 적재 완료를 알리는 Dataset(변환 DAG 의 스케줄 트리거)
-BRONZE_READY = {
-    s: Dataset(f"maxdl://bronze/{s}")
-    for s in ("maxplatform", "pfms", "maxapex", "maxtdoracle")
-}
+from cosmos import (
+    DbtTaskGroup, ProjectConfig, ProfileConfig, ExecutionConfig, RenderConfig,
+)
+from cosmos.constants import LoadMode, ExecutionMode
 
-DEFAULT_ARGS = {
-    "owner": "maxdl",
-    "retries": 1,
-}
+DBT_PROJECT = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/maxdl_transform")
+MANIFEST = os.environ.get("DBT_MANIFEST", f"{DBT_PROJECT}/target/manifest.json")
+
+SOURCES = ("maxplatform", "pfms", "maxapex", "maxtdoracle")
+BRONZE_READY = {s: Asset(f"maxdl://bronze/{s}") for s in SOURCES}
+DEFAULT_ARGS = {"owner": "maxdl", "retries": 1}
+
+# dbt-trino: Cosmos profile 은 프로젝트의 profiles.yml(env_var) 재사용
+PROFILE = ProfileConfig(
+    profile_name="maxdl_transform",
+    target_name="default",
+    profiles_yml_filepath=f"{DBT_PROJECT}/profiles.yml",
+)
+EXEC = ExecutionConfig(execution_mode=ExecutionMode.LOCAL)
 
 
-def build_ingest_dag(source: str, airbyte_connection_id: str | None) -> DAG:
-    """소스 1개에 대한 인제스션+staging DAG 생성.
+def _airbyte_sync(connection_id: str, **_):
+    """Airbyte API 로 동기화 트리거 후 완료까지 폴링(provider 비멱등 회피).
+    자격: 환경변수 AIRBYTE_API/CLIENT_ID/CLIENT_SECRET (차트 env 주입)."""
+    import json, urllib.request
+    base = os.environ["AIRBYTE_API"]  # http://airbyte-airbyte-server-svc.maxdl-ingest:8001
+    cid = os.environ["AIRBYTE_CLIENT_ID"]
+    csec = os.environ["AIRBYTE_CLIENT_SECRET"]
 
-    source                : 논리 소스명(maxplatform/pfms/maxapex/maxtdoracle)
-    airbyte_connection_id : Airbyte 커넥션 UUID(실 테이블 확정 후 주입)
-    """
-    dag = DAG(
+    def _post(path, body, token=None):
+        req = urllib.request.Request(
+            base + path, data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json",
+                     **({"Authorization": f"Bearer {token}"} if token else {})})
+        return json.loads(urllib.request.urlopen(req, timeout=60).read())
+
+    tok = _post("/api/public/v1/applications/token",
+                {"client_id": cid, "client_secret": csec})["access_token"]
+    job = _post("/api/v1/connections/sync", {"connectionId": connection_id}, tok)["job"]["id"]
+    for _ in range(120):  # 최대 ~60분
+        st = _post("/api/v1/jobs/get", {"id": job}, tok)["job"]["status"]
+        if st == "succeeded":
+            return
+        if st in ("failed", "cancelled"):
+            raise RuntimeError(f"Airbyte sync {job} {st}")
+        time.sleep(30)
+    raise TimeoutError(f"Airbyte sync {job} timeout")
+
+
+def build_ingest_dag(source: str) -> DAG:
+    """소스 1개: Airbyte 동기화 → Cosmos dbt(staging+silver, 해당 소스)."""
+    with DAG(
         dag_id=f"ingest_{source}",
-        description=f"{source} Bronze 인제스션 → staging",
-        schedule="@daily",
-        start_date=datetime(2026, 1, 1),
-        catchup=False,
-        default_args=DEFAULT_ARGS,
+        description=f"{source}: Airbyte→Bronze → dbt staging/silver",
+        schedule="@daily", start_date=datetime(2026, 1, 1),
+        catchup=False, default_args=DEFAULT_ARGS,
         tags=["maxdl", "ingest", source],
-    )
-    with dag:
-        # 지연 import: 커스텀 이미지 미적용 환경에서도 DAG 파싱은 통과
-        try:
-            from airflow.providers.airbyte.operators.airbyte import (
-                AirbyteTriggerSyncOperator,
-            )
-            from airflow.providers.airbyte.sensors.airbyte import AirbyteSensor
-
-            trigger = AirbyteTriggerSyncOperator(
-                task_id="airbyte_sync",
-                connection_id=airbyte_connection_id or "TBD",
-                asynchronous=True,
-                retries=0,  # 비멱등 → DAG 재실행으로 복구(계획서 §6)
-            )
-            wait = AirbyteSensor(
-                task_id="airbyte_wait",
-                airbyte_job_id="{{ ti.xcom_pull(task_ids='airbyte_sync') }}",
-            )
-            trigger >> wait
-        except ImportError:
-            from airflow.operators.empty import EmptyOperator
-
-            EmptyOperator(task_id="airbyte_sync_placeholder")
+    ) as dag:
+        sync = PythonOperator(
+            task_id="airbyte_sync",
+            python_callable=_airbyte_sync,
+            op_kwargs={"connection_id":
+                       "{{ var.value.get('airbyte_conn_" + source + "', 'TBD') }}"},
+            retries=0,  # 비멱등 → DAG 재실행으로 복구
+        )
+        dbt = DbtTaskGroup(
+            group_id=f"dbt_{source}",
+            project_config=ProjectConfig(DBT_PROJECT, manifest_path=MANIFEST),
+            profile_config=PROFILE, execution_config=EXEC,
+            render_config=RenderConfig(
+                load_method=LoadMode.DBT_MANIFEST,
+                select=[f"path:models/staging/{source}",
+                        f"path:models/intermediate/{source}"]),
+            operator_args={"outlets": [BRONZE_READY[source]]},
+        )
+        sync >> dbt
     return dag
 
 
 def build_transform_dag() -> DAG:
-    """전 소스 Bronze 완료(Dataset) 시 Silver→Gold 변환 DAG."""
-    dag = DAG(
-        dag_id="transform_silver_gold",
-        description="Silver(정제/dedup) → Gold(MES/LIMS/QMS/SPC) + DQ 게이트",
-        schedule=list(BRONZE_READY.values()),  # 데이터셋 스케줄
+    """전 소스 Bronze 완료(Dataset) → Gold 마트(Cosmos marts)."""
+    with DAG(
+        dag_id="transform_gold",
+        description="Silver → Gold 마트 (Cosmos marts)",
+        schedule=list(BRONZE_READY.values()),
         start_date=datetime(2026, 1, 1),
-        catchup=False,
-        default_args=DEFAULT_ARGS,
-        tags=["maxdl", "transform"],
-    )
-    with dag:
-        from airflow.operators.empty import EmptyOperator
-
-        EmptyOperator(task_id="dbt_silver_gold_placeholder")
+        catchup=False, default_args=DEFAULT_ARGS,
+        tags=["maxdl", "transform", "gold"],
+    ) as dag:
+        DbtTaskGroup(
+            group_id="dbt_marts",
+            project_config=ProjectConfig(DBT_PROJECT, manifest_path=MANIFEST),
+            profile_config=PROFILE, execution_config=EXEC,
+            render_config=RenderConfig(load_method=LoadMode.DBT_MANIFEST,
+                                       select=["path:models/marts"]),
+        )
     return dag
