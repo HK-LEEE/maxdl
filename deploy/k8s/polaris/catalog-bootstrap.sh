@@ -77,4 +77,30 @@ print(json.dumps({"currentEntityVersion":c["entityVersion"],"properties":p}))')"
     "$POLARIS/api/management/v1/catalogs/$L" -d "$PUTBODY" || true
   echo "= $L : CATALOG_MANAGE_CONTENT + drop-with-purge 보정 적용"
 done
+# --- FU-2 최소권한 RBAC 배선 (재실행 안전, 결정적) ---
+# principal 자체(자격증명 비재현)는 1회 부트스트랩 + SealedSecret 봉인:
+#   POST /principals {name}  → credentials(clientId:clientSecret) 캡처 →
+#   polaris-oauth(maxdl-query, svc-trino) / Airbyte 목적지 config(svc-airbyte)
+# 아래는 결정적 요소(역할/권한/할당)만 idempotent 적용한다.
+PR_API="$POLARIS/api/management/v1"
+ensure_pr(){ curl -s -o /dev/null -X POST "$PR_API/principal-roles" -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -d "{\"principalRole\":{\"name\":\"$1\"}}"; }
+ensure_cr(){ curl -s -o /dev/null -X POST "$PR_API/catalogs/$1/catalog-roles" -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -d "{\"catalogRole\":{\"name\":\"$2\"}}"; }
+grant(){ curl -s -o /dev/null -X PUT "$PR_API/catalogs/$1/catalog-roles/$2/grants" -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -d "{\"grant\":{\"type\":\"catalog\",\"privilege\":\"$3\"}}"; }
+bind(){ curl -s -o /dev/null -X PUT "$PR_API/principal-roles/$1/catalog-roles/$2" -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -d "{\"catalogRole\":{\"name\":\"$3\"}}"; }
+
+ensure_pr pr-trino; ensure_pr pr-airbyte
+# svc-airbyte: bronze 만 manage(쓰기/생성/드롭)
+ensure_cr bronze cr-bronze-rw; grant bronze cr-bronze-rw CATALOG_MANAGE_CONTENT
+bind pr-airbyte bronze cr-bronze-rw
+# svc-trino: bronze 읽기 전용 + silver/gold manage
+ensure_cr bronze cr-bronze-ro
+for P in TABLE_READ_DATA TABLE_LIST TABLE_READ_PROPERTIES NAMESPACE_LIST NAMESPACE_READ_PROPERTIES CATALOG_READ_PROPERTIES; do
+  grant bronze cr-bronze-ro "$P"
+done
+bind pr-trino bronze cr-bronze-ro
+for L in silver gold; do
+  ensure_cr "$L" cr-rw; grant "$L" cr-rw CATALOG_MANAGE_CONTENT; bind pr-trino "$L" cr-rw
+done
+echo "= FU-2 RBAC(pr-trino/pr-airbyte 역할·권한·할당) 보정 적용"
+echo "  (principal 자격은 1회 부트스트랩 후 SealedSecret 으로 관리 — 본 스크립트 비대상)"
 echo "Polaris 카탈로그 부트스트랩 완료."

@@ -21,7 +21,7 @@ HTTP 000(연결 리셋). **반드시 in-cluster 호출**.
 
 ---
 
-## FU-2. 권한 최소화 (root → 전용 principal) 〔P0·보안·난이도 중〕
+## FU-2. 권한 최소화 (root → 전용 principal) — ✅ 해결 〔P0·보안〕
 
 **배경**: 스파이크 편의로 Polaris `root` principal 을 Trino(`polaris-oauth`)·
 Airbyte 목적지가 공유 사용 중. 과도 권한.
@@ -35,7 +35,11 @@ Airbyte 목적지가 공유 사용 중. 과도 권한.
 
 **완료조건**: 각 서비스가 전용 principal 로 정상 동작 + root 토큰 미사용 확인,
 권한 경계 negative test(Airbyte principal 로 silver 쓰기 거부 등).
-**리스크**: 권한 과소 시 런타임 실패 → 단계적 검증.
+**해결**: Polaris principal `svc-trino`(bronze RO + silver/gold RW),
+`svc-airbyte`(bronze RW only) 생성. polaris-oauth(Trino)·Airbyte 목적지
+자격을 전용 principal 로 교체, root 는 부트스트랩 전용. Positive/Negative
+검증 통과(svc-trino bronze 쓰기 거부, Airbyte 목적지 check succeeded).
+RBAC 배선 `catalog-bootstrap.sh` idempotent 반영. 자격은 SealedSecret 관리.
 
 ---
 
@@ -111,9 +115,9 @@ admin/admin, Airflow `webserverSecretKey`.
 |---|---|
 | ✅ 완료 | FU-1 |
 | 외부 입력/결정 필요 | FU-4(소스 스펙), FU-3(레지스트리) |
-| **독립 진행 가능** | **FU-2(보안 P0) → FU-5(보안 P1) → FU-6(재현성 P2)** |
+| **독립 진행 가능** | ~~FU-2~~ ✅ → **FU-5(보안 P1) → FU-6(재현성 P2)** |
 | 운영 단계 | FU-7 |
 
-권장 진행 순서(독립 항목): **FU-2 → FU-5 → FU-6**
+권장 진행 순서(독립 항목): ~~FU-2~~ 완료 → **FU-5 → FU-6**
 근거: 보안 위험도(권한>시크릿) 우선, 이후 재현성. FU-2 가 Polaris RBAC 를
 다루므로 `catalog-bootstrap.sh` 변경이 FU-6(helmfile hook) 설계에 선반영됨.
