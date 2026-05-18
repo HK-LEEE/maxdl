@@ -229,14 +229,22 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
   svc-superset=200·TLS8443·access-control=file, **dbt 'All checks passed!'**
   (https svc-dbt+CA), Superset 커넥션 갱신(svc-superset@8443/impersonate/
   verify=CA)·인증200. 거버넌스 라이브 강제 중.
-- **잔여(정직)**: ① Superset UI 로그인(admin)→Gold→임퍼소네이션·PII
-  마스킹 육안 스모크는 수동(브라우저 필요) ② dbt-trino 1.10.1 은 인증서
-  *검증* 기본 off(전송+인증은 동작, 내부 self-signed 수용 — 추후 cert:True
-  강화 여지) ③ 폐쇄망 이동 시 이 컷오버 구성 그대로 동반(TLS 포함)
-- **트레이드오프(정직)**: ⓐ 유저/그룹 추가 수동(SSO 없음, groups.txt) —
-  소수~중간 규모 수용, 대규모면 SSO 재검토 ⓑ 정책 GUI 없음(정책=git JSON,
-  코드리뷰로 거버넌스) — GUI 운영이 필수가 되면 그때 Ranger 재검토.
-
+- **컬럼 마스킹 작동 검증 완료(라이브)**: 마스킹 미작동은 rules.json
+  버그(컬럼 name 에 정규식 사용 — Trino 는 리터럴만)였고, 리터럴 PII
+  컬럼명 열거로 수정. Superset(admin→analysts 임퍼소네이션)에서
+  dim_user.email='***-MASKED-***' 확인. **FU-9 전 경로 라이브 완성**
+  (인증·내부TLS·임퍼소네이션·접근통제·컬럼마스킹).
+- **거버넌스 운영 절차(중요)**: trinodb 차트는 access-control ConfigMap
+  변경 시 coordinator 자동 롤아웃 안 함 → 정책(rules.json/groups.txt)
+  변경 후 `kubectl rollout restart deployment trino-coordinator
+  -n maxdl-query` 필수.
+- **A안 진행(config 폭증 방지)**: file-based ACL 은 컬럼 name 정규식
+  불가 → PII 변형명 전부 열거 시 폭증. dbt Silver/Gold 계층에서 PII
+  컬럼을 표준명(고정 어휘)으로 정규화 → Trino rules.json 은 그 ~10개
+  고정만 마스킹(테이블/소스 수 무관, config 불변). 별도 워크스트림.
+- **잔여(정직)**: ② dbt-trino 1.10.1 인증서 *검증* 기본 off(전송+인증
+  동작, 내부 self-signed 수용 — 추후 cert:True) ③ 폐쇄망 이동 시 이
+  컷오버 구성 동반(TLS·시크릿 포함)
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
