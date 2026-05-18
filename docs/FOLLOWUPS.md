@@ -66,9 +66,18 @@ Polaris principal `svc-trino`(bronze RO + silver/gold RW)·`svc-airbyte`
   + Airflow Variable `airbyte_conn_<src>` 세팅, helmfile airbyte hook 배선.
   드리프트 실측·교정: maxapex 뷰 6개(yaml 비대상) 해제, maxtdoracle
   PRODUCTION_LOG 등록 → 4/4 라이브 = yaml 정확 일치, 재실행 변경 0.
-- **잔여(정직 기재)**: 소스/목적지 *프로비저닝 자체*(자격·커넥터별 스펙)는
-  여전히 문서-수동(`docs/ADD_NEW_DATABASE.md` 1~3.1). 본 applier 는
-  "커넥션 카탈로그 선택"만 IaC 화 — 소스/목적지 존재 전제, 없으면 명시 실패.
+- **소스/목적지 프로비저닝 IaC 화 완료**: applier 에 프로비저닝 단계 추가
+  — 소스 4종은 `src-db-*` 시크릿 + 라이브 역추출 known-good 템플릿
+  (postgres/mssql/oracle)으로 멱등 ensure(검증: check_connection
+  succeeded). 목적지는 `seaweedfs-s3` + `polaris-airbyte` 시크릿으로 ensure.
+  svc-airbyte Polaris 자격은 `catalog-bootstrap.sh` 가 principal 신규
+  생성(201) 시 캡처 → `polaris-airbyte`(maxdl-ingest) Secret 영속(기존이면
+  멱등 스킵, 동작 자격 미파손). → **사람은 secrets.env + ingestion-map.yaml
+  만 관리**, 나머지(소스/목적지/커넥션/Airflow Var) 전부 자동.
+- **정직한 단일 잔여**: *이미 부트스트랩된* 클러스터의 기존 svc-airbyte
+  자격은 Polaris 가 평문 비반환·rotate 권한 제약(403)으로 회수 불가 →
+  현재 클러스터의 목적지는 기존 자격 보존(스킵). **클린/폐쇄망 재구축은
+  201 캡처 경로로 완전 재현**(이 경우만 영향, 신규 환경엔 무해).
 
 ### 1.6 FU-4b. pfms 대문자 식별자 — ✅ 해결 (정석)
 

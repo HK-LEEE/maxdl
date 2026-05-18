@@ -89,6 +89,57 @@ grant(){ curl -s -o /dev/null -X PUT "$PR_API/catalogs/$1/catalog-roles/$2/grant
 bind(){ curl -s -o /dev/null -X PUT "$PR_API/principal-roles/$1/catalog-roles/$2" -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -d "{\"catalogRole\":{\"name\":\"$3\"}}"; }
 
 ensure_pr pr-trino; ensure_pr pr-airbyte
+
+# --- principal 자격 캡처(클린 재구축 재현) ---------------------------------
+# Polaris 는 principal 생성 시 credentials(clientId:clientSecret)를 1회만 반환
+# (이후 평문 비재현, rotate 는 별도 권한). 따라서 "신규 생성(201)일 때만"
+# 자격을 캡처해 K8s Secret 으로 영속한다. 이미 존재(409)면 기존 Secret 신뢰
+# 하고 건너뜀(동작 중 자격을 깨지 않음 — 멱등·안전).
+#   svc-trino   → polaris-oauth(maxdl-query) key 'credential'  (Trino 소비)
+#   svc-airbyte → polaris-airbyte(maxdl-ingest) client_id/secret (목적지 소비)
+ensure_principal_secret(){   # $1=principal $2=secretNS $3=secretName $4=fmt(credential|split)
+  local P="$1" SNS="$2" SN="$3" FMT="$4"
+  if kubectl get secret "$SN" -n "$SNS" >/dev/null 2>&1; then
+    echo "= principal $P : Secret $SN 존재 — 자격 캡처 건너뜀(멱등)"; return 0; fi
+  local RESP CODE
+  RESP="$(curl -s -w '\n%{http_code}' -X POST "$PR_API/principals" \
+    -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' \
+    -d "{\"principal\":{\"name\":\"$P\"}}")"
+  CODE="$(printf '%s' "$RESP" | tail -1)"
+  if [ "$CODE" != "201" ]; then
+    echo "= principal $P : 생성 HTTP=$CODE (기존 추정) — 자격 비재현, Secret 미생성"
+    echo "  ⚠ 클린 재구축이 아닌 환경: $SN 을 운영자가 1회 주입 필요(문서 참조)"
+    return 0; fi
+  printf '%s' "$RESP" | sed '$d' | CRED_NS="$SNS" CRED_SN="$SN" CRED_FMT="$FMT" \
+    python3 - "$P" <<'PY'
+import os,sys,json,base64,subprocess
+P=sys.argv[1]; body=json.load(sys.stdin)
+cr=body.get("credentials",body)
+cid=cr.get("clientId"); csec=cr.get("clientSecret")
+if not cid or not csec: sys.exit(f"ERROR: {P} 자격 파싱 실패")
+ns,sn,fmt=os.environ["CRED_NS"],os.environ["CRED_SN"],os.environ["CRED_FMT"]
+if fmt=="credential": data={"credential": f"{cid}:{csec}"}
+else: data={"client_id":cid,"client_secret":csec}
+man={"apiVersion":"v1","kind":"Secret","type":"Opaque",
+ "metadata":{"name":sn,"namespace":ns},
+ "data":{k:base64.b64encode(v.encode()).decode() for k,v in data.items()}}
+p=subprocess.run(["kubectl","apply","-f","-"],input=json.dumps(man),
+                  text=True,capture_output=True)
+print(("  + " if p.returncode==0 else "  ERROR ")+p.stdout.strip()+p.stderr.strip())
+sys.exit(p.returncode)
+PY
+  echo "= principal $P : 신규 자격 캡처 → Secret $SN ($SNS)"
+}
+ensure_principal_secret svc-trino   maxdl-query  polaris-oauth   credential
+ensure_principal_secret svc-airbyte maxdl-ingest polaris-airbyte split
+# principal ↔ principal-role 할당(멱등)
+curl -s -o /dev/null -X PUT "$PR_API/principals/svc-trino/principal-roles" \
+  -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' \
+  -d '{"principalRole":{"name":"pr-trino"}}' || true
+curl -s -o /dev/null -X PUT "$PR_API/principals/svc-airbyte/principal-roles" \
+  -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' \
+  -d '{"principalRole":{"name":"pr-airbyte"}}' || true
+
 # svc-airbyte: bronze 만 manage(쓰기/생성/드롭)
 ensure_cr bronze cr-bronze-rw; grant bronze cr-bronze-rw CATALOG_MANAGE_CONTENT
 bind pr-airbyte bronze cr-bronze-rw
@@ -103,5 +154,5 @@ for L in silver gold; do
   ensure_cr "$L" cr-rw; grant "$L" cr-rw CATALOG_MANAGE_CONTENT; bind pr-trino "$L" cr-rw
 done
 echo "= FU-2 RBAC(pr-trino/pr-airbyte 역할·권한·할당) 보정 적용"
-echo "  (principal 자격은 1회 부트스트랩 후 SealedSecret 으로 관리 — 본 스크립트 비대상)"
+echo "  (principal 자격: 신규 생성 시 캡처→Secret 영속, 기존이면 멱등 스킵)"
 echo "Polaris 카탈로그 부트스트랩 완료."

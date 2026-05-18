@@ -24,6 +24,7 @@
 #     --workspace NAME   (기본 maxdl)
 #     --only SRC         특정 소스만 (반복 가능)
 #     --set-airflow-vars kubectl 로 airbyte_conn_<src> Variable 세팅
+#     --no-provision     소스/목적지 프로비저닝 생략(커넥션 카탈로그만)
 #     --dry-run          변경 없이 계획(선택/해제/모드 diff)만 출력
 #
 # 자격: 환경변수 AIRBYTE_CLIENT_ID/SECRET (airbyte-api 시크릿). 없으면 즉시 실패.
@@ -36,6 +37,7 @@ MAP="$REPO_ROOT/config/ingestion-map.yaml"
 WS_NAME="maxdl"
 DRY=0
 SET_VARS=0
+NO_PROV=0
 ONLY=()
 
 while [[ $# -gt 0 ]]; do
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --workspace) WS_NAME="$2"; shift 2;;
     --only) ONLY+=("$2"); shift 2;;
     --set-airflow-vars) SET_VARS=1; shift;;
+    --no-provision) NO_PROV=1; shift;;
     --dry-run) DRY=1; shift;;
     -h|--help) sed -n '2,33p' "$0"; exit 0;;
     *) echo "ERROR: 알 수 없는 옵션: $1" >&2; exit 2;;
@@ -64,7 +67,7 @@ fi
 [[ -n "$AIRBYTE_CLIENT_ID" && -n "$AIRBYTE_CLIENT_SECRET" ]] || { echo "ERROR: Airbyte 자격 비어있음" >&2; exit 1; }
 
 export SEAL_API="$API" SEAL_MAP="$MAP" SEAL_WS="$WS_NAME" SEAL_DRY="$DRY"
-export SEAL_SET_VARS="$SET_VARS"
+export SEAL_SET_VARS="$SET_VARS" SEAL_NO_PROVISION="$NO_PROV"
 export SEAL_ONLY="$(IFS=,; echo "${ONLY[*]:-}")"
 export AIRBYTE_CLIENT_ID AIRBYTE_CLIENT_SECRET
 
@@ -101,13 +104,128 @@ if not ws:
     raise SystemExit(f"ERROR: 워크스페이스 '{WS}' 없음")
 wsid = ws["workspaceId"]
 
-# 목적지(yaml destination → dst-iceberg-bronze 이름 규약)
+import subprocess, base64
+
+def k8s_secret(name, ns):
+    """K8s Secret → {key: 평문}. 없으면 None(예외 아님 — 호출부서 판단)."""
+    p = subprocess.run(["kubectl", "get", "secret", name, "-n", ns, "-o", "json"],
+                        capture_output=True, text=True)
+    if p.returncode != 0:
+        return None
+    d = json.loads(p.stdout).get("data", {})
+    return {k: base64.b64decode(v).decode() for k, v in d.items()}
+
+def def_id(kind, repo_substr):
+    """워크스페이스의 커넥터 정의에서 dockerRepository 매칭 ID 해석
+    (인스턴스마다 ID 가 달라 이름 기준 — Oracle 커스텀 포함)."""
+    ep = ("source_definitions" if kind == "source" else "destination_definitions")
+    key = "sourceDefinitions" if kind == "source" else "destinationDefinitions"
+    idk = "sourceDefinitionId" if kind == "source" else "destinationDefinitionId"
+    r = _req(f"/api/v1/{ep}/list_for_workspace", {"workspaceId": wsid}, tok)
+    for x in r.get(key, []):
+        if repo_substr in (x.get("dockerRepository") or ""):
+            return x[idk]
+    raise SystemExit(f"ERROR: 커넥터 정의 미발견: {kind}/{repo_substr}")
+
+def src_config(sdef, sec):
+    """ingestion-map sources.<>.connector + src-db-* 시크릿 → 커넥터별 config
+    (라이브 역추출 known-good 구조 기준 — 추측 배제)."""
+    c = sdef["connector"]; host = sec["host"]; port = int(sec["port"])
+    usr = sec["username"]; pw = sec["password"]
+    if c == "source-postgres":
+        return {"host": host, "port": port, "database": sec["database"],
+                "username": usr, "password": pw, "ssl_mode": {"mode": "disable"},
+                "tunnel_method": {"tunnel_method": "NO_TUNNEL"},
+                "replication_method": {"method": "Standard"}}
+    if c == "source-mssql":
+        return {"host": host, "port": port, "database": sec["database"],
+                "username": usr, "password": pw,
+                "ssl_method": {"ssl_method": "unencrypted"},
+                "tunnel_method": {"tunnel_method": "NO_TUNNEL"},
+                "replication_method": {"method": "STANDARD"}}
+    if c == "source-oracle":
+        return {"host": host, "port": port, "username": usr, "password": pw,
+                "encryption": {"encryption_method": "unencrypted"},
+                "tunnel_method": {"tunnel_method": "NO_TUNNEL"},
+                "connection_data": {"service_name": sec["serviceName"],
+                                    "connection_type": "service_name"}}
+    raise SystemExit(f"ERROR: 미지원 커넥터: {c}")
+
+def dst_config(s3, pol):
+    """ingestion-map destination + seaweedfs-s3 + polaris-airbyte → 목적지 config."""
+    D = MAP["destination"]; cat = D["catalog"]; s = D["s3"]
+    cu = cat["server_uri"].rstrip("/")
+    return {"s3_endpoint": s["endpoint"], "access_key_id": s3["accessKey"],
+            "secret_access_key": s3["secretKey"], "s3_bucket_name": s["bucket"],
+            "s3_bucket_region": "us-east-1", "main_branch_name": "main",
+            "warehouse_location": f"s3://{s['bucket']}/{cat['warehouse']}",
+            "catalog_type": {"catalog_type": "POLARIS", "scope": "PRINCIPAL_ROLE:ALL",
+                "server_uri": cu, "oauth2_server_uri": f"{cu}/v1/oauth/tokens",
+                "catalog_name": cat["warehouse"], "namespace": cat["warehouse"],
+                "client_id": pol["client_id"], "client_secret": pol["client_secret"]}}
+
+# --- 프로비저닝(소스 4종 + 목적지) — 멱등 ensure --------------------------
+srcs  = _req("/api/v1/sources/list", {"workspaceId": wsid}, tok)["sources"]
+dests = _req("/api/v1/destinations/list", {"workspaceId": wsid}, tok)["destinations"]
+DEF = {}  # connector → definitionId (지연 해석·캐시)
+
+if os.environ.get("SEAL_NO_PROVISION") != "1":
+    for sname, sdef in MAP["sources"].items():
+        if ONLY and sname not in ONLY:
+            continue
+        sec = k8s_secret(sdef["secret"], "maxdl-ingest")
+        if sec is None:
+            print(f"[{sname}] ERROR: 시크릿 '{sdef['secret']}' 없음 — 소스 프로비저닝 불가")
+            raise SystemExit(1)
+        cfg = src_config(sdef, sec)
+        cur = next((s for s in srcs if s["name"] == f"src-{sname}"), None)
+        if DRY:
+            print(f"[{sname}] 소스 {'갱신' if cur else '생성'} (src-{sname}, {sdef['connector']})")
+        elif cur:
+            _req("/api/v1/sources/update",
+                 {"sourceId": cur["sourceId"], "name": cur["name"],
+                  "connectionConfiguration": cfg}, tok)
+            print(f"[{sname}] 소스 갱신 ✓")
+        else:
+            did = DEF.setdefault(sdef["connector"],
+                                 def_id("source", sdef["connector"]))
+            _req("/api/v1/sources/create",
+                 {"workspaceId": wsid, "sourceDefinitionId": did,
+                  "name": f"src-{sname}", "connectionConfiguration": cfg}, tok)
+            print(f"[{sname}] 소스 생성 ✓")
+
+    # 목적지: polaris-airbyte 시크릿 필요. 없고 이미 존재하면 자격 보존(스킵).
+    dst0 = next((d for d in dests if d["name"] == "dst-iceberg-bronze"), None)
+    s3sec  = k8s_secret("seaweedfs-s3", "maxdl-ingest")
+    polsec = k8s_secret("polaris-airbyte", "maxdl-ingest")
+    if polsec and s3sec:
+        dcfg = dst_config(s3sec, polsec)
+        if DRY:
+            print(f"[목적지] {'갱신' if dst0 else '생성'} (dst-iceberg-bronze)")
+        elif dst0:
+            _req("/api/v1/destinations/update",
+                 {"destinationId": dst0["destinationId"], "name": dst0["name"],
+                  "connectionConfiguration": dcfg}, tok)
+            print("[목적지] 갱신 ✓")
+        else:
+            did = def_id("destination", "destination-s3-data-lake")
+            _req("/api/v1/destinations/create",
+                 {"workspaceId": wsid, "destinationDefinitionId": did,
+                  "name": "dst-iceberg-bronze", "connectionConfiguration": dcfg}, tok)
+            print("[목적지] 생성 ✓")
+    elif dst0:
+        print("[목적지] polaris-airbyte 시크릿 없음 + 목적지 기존 존재 "
+              "→ 자격 보존(스킵). 클린 재구축은 catalog-bootstrap 이 생성.")
+    else:
+        raise SystemExit("ERROR: 목적지 부재 + polaris-airbyte 시크릿 없음 — "
+                         "catalog-bootstrap(클린 재구축) 또는 운영자 1회 주입 필요")
+
+# 프로비저닝 후 최신 목록 재조회
 dests = _req("/api/v1/destinations/list", {"workspaceId": wsid}, tok)["destinations"]
 dst = next((d for d in dests if d["name"] == "dst-iceberg-bronze"), None)
 if not dst:
-    raise SystemExit("ERROR: 목적지 'dst-iceberg-bronze' 없음 — 소스/목적지 선행 생성 필요")
+    raise SystemExit("ERROR: 목적지 'dst-iceberg-bronze' 없음")
 dstid = dst["destinationId"]
-
 srcs = _req("/api/v1/sources/list", {"workspaceId": wsid}, tok)["sources"]
 conns = _req("/api/v1/web_backend/connections/list", {"workspaceId": wsid}, tok)["connections"]
 
