@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: trino-svc-dbt
+  namespace: maxdl-orchestrate
+spec:
+  encryptedData:
+    TRINO_PASSWORD: AgCjehCCIiE0cht0c1B2iNN+mmO5CYwt+0Gp795PY+26fiRZ10ovXg7IgKf7t6Uu3ECQor5dGM81mtyN3hJTfnd5Mvl4cRYi5FFl+mI3zmkBmdrAqYhskOdw4VHb4dE+Uxp+X7x0PpTxTEgSRupdfy2Raqrn6QTioZfTCSxBsdLvf0gdN8AIq1SBmUzldKf0x3v3EIGEJyZI5S35qFWYD8F3pbWe6qRoog0xJAGv6nTBNn1ZVWFDXj8nydFXVEJkvaF8fM2SU+JMYXwU2OkeIPoMoues9BC7h/3z3+LDp1Xd2ILw9XVlPWsUyY/8+OrUfEtx2omQqBlSUGYjCEu7dGkQflEfacRFD4QgkH+U/icWavBn3Tx/JLR/mF9BYeqpzJTacKKEpYXRvQLBruJ4DpcYBt9kr+KpjyxS0o0mxn4VbnWVDPTWk+TWFNhB8pvjJCNZGXePH/WsMsKNkRd+lWXa77v63LBwosaOhJdRaCw5FKPdqm9jteETaHNYLkHXLQSIlbjS3i7u8qAtWYqTyf0QyXw1AmZiqxXOYTweP1lXtvDYu9Ksf8h2fO/dOHNfhUB0FBtVSJOOiCZU8mKh7TaPM3/BsXC/Y1PzUjsUeLofC8MV4gbKUqumBi8RXZPd+9WdsVrgDdIJGFniKV1wu4ijYR5l2juIEnE2YAA80qgyifiu/7dtbrghpuDEqUYSBgBccUIXefv5xl85GCI6Tbpha3F1nfQnZvgItWUwb5OH+g==
+  template:
+    metadata:
+      name: trino-svc-dbt
+      namespace: maxdl-orchestrate
+    type: Opaque

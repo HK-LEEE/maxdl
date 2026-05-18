@@ -101,6 +101,13 @@ releases:
     version: 1.42.2
     needs: [maxdl-catalog/polaris]
     values: [charts/trino/values.yaml]
+    hooks:
+      # presync: secrets.env 의 유저 비번 → bcrypt → trino-password-db Secret
+      # (파일기반 PASSWORD 인증 db). Trino 인증 켜기 전까진 유휴 — 비파괴.
+      - events: [presync]
+        showlogs: true
+        command: sh
+        args: ["-c", "bash scripts/gen-trino-password-db.sh --apply"]
 
   # --- 5) Airbyte V2 (+ 커뮤니티 Oracle 커스텀 커넥터 등록) ---
   - name: airbyte
