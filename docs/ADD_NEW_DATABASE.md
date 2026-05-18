@@ -160,6 +160,13 @@ kubectl exec -n maxdl-query deploy/trino-coordinator -- \
 
 ## 4단계: dbt 모델 생성 (Staging → Silver → 필요 시 Gold)
 
+> **✅ Staging/Silver 는 자동화됨.** `scripts/dbt-gen-models.sh` 가
+> `ingestion-map.yaml` 에서 `stg_*`/`int_*`(merge/replica) + `_staging__
+> sources.yml` + seed CSV 를 결정적 생성한다(기존과 바이트 동일 검증됨,
+> helmfile presync 배선). **새 테이블에 staging/Silver 를 손으로 짜지
+> 않는다** — ingestion-map 갱신 후 이 스크립트만 실행. 아래 4.1~4.2 는
+> 생성 결과의 구조 설명(이해/디버깅용). **Gold(4.3)만 도메인 수작업.**
+
 ### 4.1 staging (Bronze → 정제 view)
 
 `models/staging/<source>/stg_<source>__<table>.sql` 을 생성한다. 실제 패턴(`stg_maxtdoracle__production_log.sql` 참고):
