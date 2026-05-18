@@ -48,7 +48,10 @@ releases:
         # 네임스페이스 + 영속 StorageClass(Retain) 선적용. SC 는 비-default
         # 매니페스트라 기존 클러스터에 무해(아무도 참조 안 함). 실 k3s
         # default 승격·local-path-config 경로는 AIRGAP_RUNBOOK §2 절차.
-        args: ["-c", "kubectl apply -f deploy/k8s/namespaces.yaml && kubectl apply -f deploy/k8s/storageclass-retain.yaml"]
+        # namespaces + Retain SC(비-default, 무해) 항상. 영속 자동활성은
+        # MAXDL_PERSIST=1 일 때만(폐쇄망/실k3s opt-in) — 미설정 시 라이브
+        # k3d 무영향(default SC 안 건드림). MAXDL_PV_DIR 로 폴더 지정.
+        args: ["-c", "kubectl apply -f deploy/k8s/namespaces.yaml && kubectl apply -f deploy/k8s/storageclass-retain.yaml && { [ \"${MAXDL_PERSIST:-0}\" = 1 ] && bash scripts/setup-k3s-persistence.sh || true; }"]
       - events: [postsync]
         showlogs: true
         command: sh

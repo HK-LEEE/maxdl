@@ -59,21 +59,25 @@ scripts/airflow-artifact-publish.sh          # dbt+dags+manifest+docs → 번들
 ```bash
 # 2-1. k3s 클러스터 기동 (0.3 자산으로 — k3s 설치 절차는 환경 의존)
 
-# 2-1b. **영속 스토리지 정석(실 k3s)** — 메타DB PVC 를 호스트 영속 디렉토리에
-#   고정. (레이크하우스 본체는 외부 SeaweedFS 라 별개로 이미 영속.)
-#   ① 전용 영속 디스크를 호스트에 마운트(백업 대상):
-#        mkdir -p /data/maxdl-pv   # 별도 디스크/LV 권장
-#   ② k3s 내장 local-path 저장경로를 그 디렉토리로:
-#        kubectl -n kube-system patch configmap local-path-config --type merge \
-#          -p '{"data":{"config.json":"{\"nodePathMap\":[{\"node\":\"DEFAULT_PATH_FOR_NON_LISTED_NODES\",\"paths\":[\"/data/maxdl-pv\"]}]}"}}'
-#        kubectl -n kube-system rollout restart deploy local-path-provisioner
-#   ③ 영속 SC(Retain) 적용 + default 승격(내장 local-path default 해제):
-#        kubectl apply -f deploy/k8s/storageclass-retain.yaml   # (helmfile 1단계 hook 도 적용)
-#        kubectl annotate sc local-path storageclass.kubernetes.io/is-default-class- --overwrite
-#        kubectl annotate sc maxdl-retain storageclass.kubernetes.io/is-default-class=true --overwrite
-#   → 번들 차트 values 무수정으로 전 PVC 가 maxdl-retain(Retain·/data/maxdl-pv) 사용.
-#   주의: Retain=PVC 삭제 시 PV·폴더 잔존(고의·영속, 수동정리). local-path=
-#   노드 종속(단일노드 가정; 멀티노드는 Longhorn/NFS-CSI 로 SC 교체).
+# 2-1b. **영속 스토리지 자동(실 k3s)** — 메타DB PVC 를 지정 폴더에 영속.
+#   (레이크하우스 본체는 외부 SeaweedFS 라 별개로 이미 영속.)
+#   불가피한 수동 = 폴더 선택 하나. 나머지(local-path 경로 재지정 +
+#   maxdl-retain default 승격)는 helmfile 1단계 hook 이 자동 수행.
+#
+#   export MAXDL_PERSIST=1                       # 영속 자동활성(opt-in)
+#   export MAXDL_PV_DIR=/srv/maxdl-pv            # 영속 폴더(미설정 시
+#                                                #  <repo>/.maxdl-pv 기본)
+#   # 이후 5단계 `helmfile apply` 시 sealed-secrets presync 가
+#   # scripts/setup-k3s-persistence.sh 자동 실행:
+#   #   폴더 생성 → local-path-config 경로 재지정 → provisioner 재기동
+#   #   → maxdl-retain(Retain) default 승격(내장 local-path default 해제)
+#   # → 번들 차트 values 무수정으로 전 PVC 가 그 폴더에 영속.
+#   # MAXDL_PERSIST 미설정이면 SC 만 적용(비-default·무해) — 영속 미활성.
+#
+#   주의: 폴더가 레포 내부면 .gitignore 됨(.maxdl-pv) — DB데이터·비밀
+#   커밋 금지. 전용 디스크 아님 → 격리/쿼터 없음, 그 폴더 디스크 용량
+#   충분 확보. Retain=PVC 삭제해도 폴더 잔존(고의·수동정리). local-path
+#   =노드 종속(단일노드 가정; 멀티노드는 Longhorn/NFS-CSI 로 SC 교체).
 
 # 2-2. 번들 전송 후 **모든 노드에서 1회씩**:
 sudo scripts/airgap-load.sh dist/maxdl-airgap-images.tar.gz
@@ -81,7 +85,7 @@ sudo scripts/airgap-load.sh dist/maxdl-airgap-images.tar.gz
 ```
 **검증 게이트**: 각 노드 `k3s ctr images ls | grep maxdl/airflow` 존재.
 SC: `kubectl get sc` 에서 `maxdl-retain (default)` + `local-path`(비default).
-PVC 바인딩 후 호스트 `/data/maxdl-pv/` 에 `pvc-*` 폴더 생성 확인.
+PVC 바인딩 후 호스트 `$MAXDL_PV_DIR/`(기본 <repo>/.maxdl-pv) 에 `pvc-*` 폴더 생성 확인.
 **실패 시**: KubernetesExecutor 태스크 pod 는 아무 노드에나 스케줄 →
 **누락 노드 1개도 ImagePullBackOff**. 전 노드 적재 재확인.
 
@@ -201,10 +205,9 @@ ingestion-map.sh`), Superset admin 재설정, dbt 아티팩트 발행·password-
 - **정책 변경 시 coordinator 수동 rollout restart** — 차트가 access-control
   ConfigMap 변경으로 자동 롤아웃 안 함(§8).
 - **백업 대상 2곳**: ① 외부 SeaweedFS `maxdl-warehouse`(레이크하우스
-  본체 — 책임경계: 공유 시스템) ② `/data/maxdl-pv`(메타DB PVC 영속
+  본체 — 책임경계: 공유 시스템) ② `$MAXDL_PV_DIR`(메타DB PVC 영속
   디렉토리, 2-1b). 메타는 부트스트랩 재구축도 가능하나 백업 시 RPO↓.
-- **영속(2-1b) 정석**: maxdl-retain(Retain) default SC + local-path-config
-  → `/data/maxdl-pv`. PVC 가 호스트 영속 폴더에 고정 → 클러스터 재생성
+- **영속(2-1b) 정석**: maxdl-retain(Retain) default + local-path-config → `$MAXDL_PV_DIR`(MAXDL_PERSIST=1 시 hook 자동). PVC 가 그 폴더에 영속 → 클러스터 재생성
   해도 보존(local-path-config 재지정 시 재마운트). 단일노드 가정.
 - **SeaweedFS 공유 주의** — 운영 시스템과 동거면 `maxdl-warehouse` 전용
   버킷만, `s3.json` 절대 미변경(MEMORY: prod S3 다운 위험).
