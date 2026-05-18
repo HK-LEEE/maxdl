@@ -223,10 +223,16 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
   - 결과: dbt 경로 불가로 **라이브 즉시 롤백**(helm rollback trino r5/
     airflow r6) → 무인증 운영 복구 확인(anon=200, 전 pod 정상). 코드의
     Trino 측 3버그 수정은 보존(검증됨), `TRINO_METHOD` 는 none 게이트 유지.
-- **남은 것 = 컷오버**(전제: **FU-7 TLS 선행 필수** — dbt-trino 비밀번호
-  인증 HTTPS 요구가 리허설서 실증됨). FU-7 후: ① Trino 인증 ON+ACL
-  ② TRINO_METHOD=ldap ③ Superset import. Trino측 코드는 버그수정 완료·
-  검증됨. **FU-9 는 FU-7 에 블록** — 폐쇄망 이동 시 TLS 동반 필요.
+- **컷오버 실행·검증 성공(라이브)**: 내부 self-signed TLS 적용 후 재시도
+  성공. 추가버그(worker keystore.key 전역적용 crash)도 적발·수정
+  (coordinatorExtraConfig 분리). 검증: Trino anon=401·svc-dbt=200·
+  svc-superset=200·TLS8443·access-control=file, **dbt 'All checks passed!'**
+  (https svc-dbt+CA), Superset 커넥션 갱신(svc-superset@8443/impersonate/
+  verify=CA)·인증200. 거버넌스 라이브 강제 중.
+- **잔여(정직)**: ① Superset UI 로그인(admin)→Gold→임퍼소네이션·PII
+  마스킹 육안 스모크는 수동(브라우저 필요) ② dbt-trino 1.10.1 은 인증서
+  *검증* 기본 off(전송+인증은 동작, 내부 self-signed 수용 — 추후 cert:True
+  강화 여지) ③ 폐쇄망 이동 시 이 컷오버 구성 그대로 동반(TLS 포함)
 - **트레이드오프(정직)**: ⓐ 유저/그룹 추가 수동(SSO 없음, groups.txt) —
   소수~중간 규모 수용, 대규모면 SSO 재검토 ⓑ 정책 GUI 없음(정책=git JSON,
   코드리뷰로 거버넌스) — GUI 운영이 필수가 되면 그때 Ranger 재검토.

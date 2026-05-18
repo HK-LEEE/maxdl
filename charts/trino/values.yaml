@@ -23,6 +23,9 @@ server:
       port: 8443
       keystore:
         path: /etc/trino-tls/keystore.p12
+  # keystore 비번은 coordinator 전용(worker https 미서빙). ${ENV:} 치환됨.
+  coordinatorExtraConfig: |
+    http-server.https.keystore.key=${ENV:TRINO_TLS_KEYSTORE_PASSWORD}
 
 coordinator:
   resources:
@@ -93,7 +96,9 @@ env:
 additionalConfigProperties:
   - http-server.authentication.allow-insecure-over-http=true
   - internal-communication.shared-secret=${ENV:TRINO_INTERNAL_SECRET}
-  - http-server.https.keystore.key=${ENV:TRINO_TLS_KEYSTORE_PASSWORD}
+  # http-server.https.keystore.key 는 coordinator 전용(worker 는 https 미서빙
+  # → additionalConfigProperties 전역 적용 시 worker 'property not used' crash,
+  #  리허설 확인) → server.coordinatorExtraConfig 로 분리(상단).
 
 # =============================================================================
 # 접근 제어 (FU-9/4단계: 코드화만 — 라이브 미적용. 컷오버와 동시 활성).

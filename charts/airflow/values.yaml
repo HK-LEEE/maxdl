@@ -25,13 +25,13 @@ env:
   # FU-9 컷오버 게이트(기본=현 무인증 동작, 비파괴). 컷오버 시 동시 플립:
   #   TRINO_PORT 8080→8443, TRINO_METHOD none→ldap, TRINO_HTTP_SCHEME http→https
   - name: TRINO_PORT
-    value: "8080"
+    value: "8443"
   - name: TRINO_USER
     value: "svc-dbt"
   - name: TRINO_METHOD
-    value: "none"
+    value: "ldap"
   - name: TRINO_HTTP_SCHEME
-    value: "http"
+    value: "https"
   # self-signed Trino 신뢰: trino-tls-ca 마운트본을 trino python client 가
   # 신뢰(verify 끄지 않음). https 아닐 땐 무영향 → 항상 설정(비파괴).
   - name: REQUESTS_CA_BUNDLE
