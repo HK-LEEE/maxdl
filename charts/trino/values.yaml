@@ -102,12 +102,14 @@ additionalConfigProperties:
 
 # =============================================================================
 # 접근 제어 (FU-9/4단계: 코드화만 — 라이브 미적용. 컷오버와 동시 활성).
-# Trino 내장 file-based(B안). **테이블 열거 금지 — 정규식/그룹/계층 패턴**
-# 으로 1000+ 테이블도 규칙 한 줌으로 관리. 그룹이 거버넌스 단위(group
-# provider=file). 정책=git(JSON, SSOT). first-match·미매칭=거부.
+# Trino 내장 file-based(B안). catalog/schema/table 은 정규식이라 **테이블
+# 열거 없이** 1000+ 도 규칙 한 줌. 단 **컬럼 mask 의 name 은 리터럴(정규식
+# 아님 — Trino 사양)** → PII 컬럼명을 enumerate(table:.* 라 전 테이블 적용,
+# 여전히 컬럼명 단위라 확장성 유지). 그룹이 거버넌스 단위(group provider
+# =file). 정책=git(JSON, SSOT). first-match·미매칭=거부.
 # - svc-dbt: 파이프라인 엔진 → 전 계층 R/W (user 정규식)
 # - svc-superset: 임퍼소네이션 허용(실유저로 위임), 직접 데이터 접근 없음
-# - analysts 그룹: Gold/Silver read-only + PII 컬럼명 패턴 마스킹(샘플)
+# - analysts 그룹: Gold/Silver read-only + PII 컬럼(email/phone/ssn/...) 마스킹
 # - 그 외: 거부(기본)
 # 그룹 매핑(deploy/k8s/trino/groups.txt)·신원 추가가 거버넌스 운영 표면.
 # =============================================================================
@@ -133,8 +135,14 @@ accessControl:
             "group": "analysts", "catalog": "iceberg_(silver|gold)",
             "schema": ".*", "table": ".*", "privileges": ["SELECT"],
             "columns": [
-              { "name": "(?i).*(ssn|rrn|resident_no|email|phone|mobile|passwd|password).*",
-                "mask": "'***-MASKED-***'" }
+              { "name": "email", "mask": "'***-MASKED-***'" },
+              { "name": "phone", "mask": "'***-MASKED-***'" },
+              { "name": "mobile", "mask": "'***-MASKED-***'" },
+              { "name": "ssn", "mask": "'***-MASKED-***'" },
+              { "name": "rrn", "mask": "'***-MASKED-***'" },
+              { "name": "resident_no", "mask": "'***-MASKED-***'" },
+              { "name": "password", "mask": "'***-MASKED-***'" },
+              { "name": "passwd", "mask": "'***-MASKED-***'" }
             ]
           }
         ],
