@@ -324,6 +324,8 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; export PATH="/usr/local/bin:$PATH"
 kubeseal --fetch-cert --controller-namespace maxdl-system \
   --controller-name sealed-secrets-controller > /tmp/pub.pem
 scripts/seal-from-env.sh --cert /tmp/pub.pem --only src-db-<name> --apply
+#   <name> = 소스 논리명. 예) mynewdb → --only src-db-mynewdb
+#   (= secrets-spec.yaml 의 name: / ingestion-map sources.<name>.secret 와 동일)
 shred -u /tmp/pub.pem
 # 2) 이하 A 와 동일
 scripts/dbt-gen-models.sh --check
