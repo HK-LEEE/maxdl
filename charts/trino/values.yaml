@@ -16,6 +16,13 @@ server:
   workers: 1
   config:
     authenticationType: "password"
+    # FU-9 내부 self-signed TLS(컷오버 활성). dbt-trino 비밀번호 인증이
+    # HTTPS 강제(리허설 실증) → coordinator https. FU-7(외부/도메인)과 별개.
+    https:
+      enabled: true
+      port: 8443
+      keystore:
+        path: /etc/trino-tls/keystore.p12
 
 coordinator:
   resources:
@@ -41,6 +48,9 @@ coordinator:
     - name: trino-password-db
       secretName: trino-password-db
       path: /etc/trino-secrets
+    - name: trino-tls
+      secretName: trino-tls
+      path: /etc/trino-tls          # keystore.p12 (self-signed)
 worker:
   resources:
     requests: { cpu: "500m", memory: "2Gi" }
@@ -62,6 +72,8 @@ env:
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
   - name: TRINO_INTERNAL_SECRET     # 인증 활성 시 coord↔worker 내부통신 필수
     valueFrom: { secretKeyRef: { name: trino-internal, key: shared-secret } }
+  - name: TRINO_TLS_KEYSTORE_PASSWORD   # self-signed keystore.p12 비번
+    valueFrom: { secretKeyRef: { name: trino-tls-pw, key: keystore-password } }
 
 # =============================================================================
 # 인증 (1단계: 코드화만 — 라이브 미적용. 컷오버는 Superset 임퍼소네이션과
@@ -81,6 +93,7 @@ env:
 additionalConfigProperties:
   - http-server.authentication.allow-insecure-over-http=true
   - internal-communication.shared-secret=${ENV:TRINO_INTERNAL_SECRET}
+  - http-server.https.keystore.key=${ENV:TRINO_TLS_KEYSTORE_PASSWORD}
 
 # =============================================================================
 # 접근 제어 (FU-9/4단계: 코드화만 — 라이브 미적용. 컷오버와 동시 활성).

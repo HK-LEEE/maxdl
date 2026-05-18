@@ -72,3 +72,15 @@ extraEnvRaw:
       secretKeyRef:
         name: superset-secret
         key: SUPERSET_SECRET_KEY
+
+# FU-9: self-signed Trino(https/8443) 신뢰 — trino-tls-ca 마운트.
+# Superset Trino 커넥션 connect_args.verify=/etc/trino-ca/tls.crt 가 이걸 사용
+# (검증 끄지 않음). https 커넥션 import 전엔 무영향(비파괴).
+extraVolumes:
+  - name: trino-ca
+    secret:
+      secretName: trino-tls-ca
+extraVolumeMounts:
+  - name: trino-ca
+    mountPath: /etc/trino-ca
+    readOnly: true
