@@ -3,6 +3,10 @@
 이 문서는 maxdl 레이크하우스에 **새 소스 DB 한 개를 처음부터 끝까지 연결**하는 절차를 단계별로 설명한다. 초보자가 그대로 따라 할 수 있도록 각 명령에 "이게 무엇을 하는지" 한 줄 설명을 붙였고, "왜 그렇게 하는지" 도 함께 적었다. 실제 이 프로젝트에서 4개 소스(maxplatform/maxapex/pfms/maxtdoracle)를 연결할 때 쓴 절차와 동일하다.
 
 > **굵게 표시한 경고는 반드시 지킬 것.** 어기면 운영 장애 또는 보안 사고로 이어진다.
+>
+> **폐쇄망 운영 중이면** 쉬운 순서·2가지 흐름(테이블만 추가 / 새 DB)·
+> 폐쇄망 제약은 [`ADD_DB_TABLE_AIRGAP.md`](./ADD_DB_TABLE_AIRGAP.md) 를
+> 먼저 보고, 이 문서는 깊은 배경·트러블슈팅 레퍼런스로 사용한다.
 
 ---
 
@@ -240,7 +244,11 @@ kubectl exec -n maxdl-orchestrate deploy/airflow-scheduler -- \
   airflow variables set airbyte_conn_mynewdb "<커넥션 UUID>"
 ```
 
-> `SOURCES` 를 바꿨으면 커스텀 Airflow 이미지를 재빌드/재import 해야 한다(DAG·dbt 가 이미지에 동봉됨 — INSTALL §2 6단계 참조).
+> **이미지 재빌드 불요(아티팩트 패턴).** DAG·dbt 는 이미지에 동봉되지
+> 않고 SeaweedFS 아티팩트 tar 로 배포된다. `SOURCES` 를 바꿨으면
+> `scripts/airflow-artifact-publish.sh` 로 아티팩트만 재발행하고 Airflow
+> 컴포넌트를 재기동(initContainer 가 refetch)하면 된다. 폐쇄망에서는
+> 재발행이 온라인 호스트 몫(`dbt deps` 인터넷 필요) — `ADD_DB_TABLE_AIRGAP.md` §0.
 
 ---
 
@@ -267,5 +275,5 @@ kubectl exec -n maxdl-orchestrate deploy/airflow-scheduler -- \
 - [ ] 3단계: (Oracle 시) 커스텀 커넥터 등록, 소스/커넥션 생성, **stream.name 원본 유지**
 - [ ] 3단계: Trino 로 `iceberg_bronze.<name>.<table>` 행 수 검증
 - [ ] 4단계: staging/intermediate 모델 생성·`dbt run` 통과
-- [ ] 5단계: `SOURCES` 추가 + `airbyte_conn_<name>` Variable 주입 + 이미지 재빌드
+- [ ] 5단계: `SOURCES` 추가 + `airbyte_conn_<name>` Variable 주입 + 아티팩트 재발행(이미지 재빌드 아님)
 - [ ] 보안: **평문 시크릿 미커밋**, **운영 SeaweedFS 버킷(`maxdl-warehouse` 외) 미침범** 재확인
