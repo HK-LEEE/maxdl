@@ -28,6 +28,9 @@ env:
     value: "svc-dbt"
   # 인증 게이트: 기본 none(현 무인증 — 비파괴). 컷오버 시 "ldap" 로 플립
   # → dbt-trino 가 svc-dbt:TRINO_PASSWORD 로 파일기반 PASSWORD 인증.
+  # FU-9 컷오버 게이트: 기본 none(현 무인증 — 비파괴). 컷오버 시 "ldap".
+  # ⚠ 컷오버 전제: dbt-trino ldap 인증은 HTTPS 요구(트라이얼서 SSL 에러
+  #   확인) → FU-7(TLS) 선행 필수. TLS 전엔 ldap 플립 불가(FOLLOWUPS FU-9).
   - name: TRINO_METHOD
     value: "none"
   - name: AIRBYTE_API

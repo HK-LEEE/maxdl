@@ -21,14 +21,26 @@ coordinator:
   resources:
     requests: { cpu: "500m", memory: "2Gi" }
     limits:   { memory: "4Gi" }
-  # FU-9/4단계: 그룹 provider(file). ConfigMap 키 '/' 불가 → 평탄.
-  # 코드-only(컷오버 활성). groups.txt = 거버넌스 운영 편집 표면.
+  # FU-9: 차트 auth.passwordAuthSecret 는 password.db 만 마운트하고
+  # password-authenticator.properties 를 생성하지 않음(컷오버 리허설에서
+  # crash 로 확인) → 차트 auth 헬퍼 미사용, 명시적 파일/시크릿마운트로 결정적.
+  # group-provider(file)도 동일 방식. ConfigMap 키 '/' 불가 → 평탄.
   additionalConfigFiles:
+    password-authenticator.properties: |-
+      password-authenticator.name=file
+      file.password-file=/etc/trino-secrets/password.db
     group-provider.properties: |-
       group-provider.name=file
       file.group-file=/etc/trino/groups.txt
     groups.txt: |-
       analysts:admin
+  # password.db(bcrypt) 는 시크릿 → secretMount. /etc/trino 는 차트 관리
+  # 볼륨이라 그 안 subPath 마운트 시 'not a directory' 충돌(리허설 확인)
+  # → 별도 디렉토리 /etc/trino-secrets 에 시크릿 통째 마운트(subPath 미사용).
+  secretMounts:
+    - name: trino-password-db
+      secretName: trino-password-db
+      path: /etc/trino-secrets
 worker:
   resources:
     requests: { cpu: "500m", memory: "2Gi" }
@@ -48,6 +60,8 @@ env:
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: accessKey } }
   - name: S3_SECRET_KEY
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
+  - name: TRINO_INTERNAL_SECRET     # 인증 활성 시 coord↔worker 내부통신 필수
+    valueFrom: { secretKeyRef: { name: trino-internal, key: shared-secret } }
 
 # =============================================================================
 # 인증 (1단계: 코드화만 — 라이브 미적용. 컷오버는 Superset 임퍼소네이션과
@@ -61,12 +75,12 @@ env:
 # - 트레이드오프: 유저 추가/삭제 수동(중앙 디렉토리/SSO 없음) — 소수 유저 수용.
 #   (server.config.authenticationType 는 상단 server 블록에 통합)
 # =============================================================================
-auth:
-  # 컷오버 시 생성되는 htpasswd 포맷 Secret(svc-dbt + 사람 유저) 참조
-  passwordAuthSecret: "trino-password-db"
+# (차트 auth 헬퍼 미사용 — password-authenticator.properties 미생성 버그.
+#  password 인증은 상단 coordinator.additionalConfigFiles+secretMounts 로 명시.)
 
 additionalConfigProperties:
   - http-server.authentication.allow-insecure-over-http=true
+  - internal-communication.shared-secret=${ENV:TRINO_INTERNAL_SECRET}
 
 # =============================================================================
 # 접근 제어 (FU-9/4단계: 코드화만 — 라이브 미적용. 컷오버와 동시 활성).

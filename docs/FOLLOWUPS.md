@@ -206,10 +206,27 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
   `target/static_index.html` or `dbt docs serve`). 계획서 거버넌스=OM
   결정 의도적 번복(근거 기록). 잔여: ARCHITECTURE/INSTALL/RUNBOOK 문서의
   OM 서술은 후속 문서패스 필요(상태 SSOT 는 본 문서).
-- **남은 것 = 컷오버 1회**(동시 충족): ① Trino PASSWORD 인증 ON +
-  access-control=file ② `TRINO_METHOD=ldap` 플립(dbt/Airflow) ③ Superset
-  자산 import(svc-superset+impersonate). 1·2·3·4단계 코드·자격 전부 준비
-  완료, 안전 유휴. 폐쇄망 이동 *전* 컷오버 리허설 권장.
+- **컷오버 리허설 실시(라이브, 격리호스트 없음 — 롤백 대비)**: 리허설이
+  실 버그 4건 적발(인터넷 있을 때 잡음 = 리허설 가치 입증):
+  1. 차트 `auth.passwordAuthSecret` 가 `password-authenticator.properties`
+     미생성 → 차트 auth 헬퍼 폐기, `additionalConfigFiles` 명시 생성(수정✅)
+  2. `/etc/trino/password.db` subPath 가 차트관리 볼륨과 충돌(`not a
+     directory`) → 별도 `/etc/trino-secrets` 시크릿마운트(수정✅)
+  3. 인증 활성 시 `internal-communication.shared-secret` 필수 →
+     `trino-internal` 시크릿 + `${ENV:}` 주입(수정✅)
+  - **위 3건 수정 후 Trino 컷오버 검증 성공**: anon=401(인증강제)·
+    svc-dbt=200·access-control=file 로드 확인.
+  4. **(블로커) dbt-trino `method:ldap` 가 HTTPS 강제** → 평문 HTTP Trino 에
+     `SSL WRONG_VERSION_NUMBER`. `http_scheme:http` 무시됨. 즉 **dbt(사람
+     아닌 기계) 비밀번호 인증이 TLS 요구 → FU-9 컷오버가 FU-7(TLS, 사용자
+     보류)에 결합**. 미해결.
+  - 결과: dbt 경로 불가로 **라이브 즉시 롤백**(helm rollback trino r5/
+    airflow r6) → 무인증 운영 복구 확인(anon=200, 전 pod 정상). 코드의
+    Trino 측 3버그 수정은 보존(검증됨), `TRINO_METHOD` 는 none 게이트 유지.
+- **남은 것 = 컷오버**(전제: **FU-7 TLS 선행 필수** — dbt-trino 비밀번호
+  인증 HTTPS 요구가 리허설서 실증됨). FU-7 후: ① Trino 인증 ON+ACL
+  ② TRINO_METHOD=ldap ③ Superset import. Trino측 코드는 버그수정 완료·
+  검증됨. **FU-9 는 FU-7 에 블록** — 폐쇄망 이동 시 TLS 동반 필요.
 - **트레이드오프(정직)**: ⓐ 유저/그룹 추가 수동(SSO 없음, groups.txt) —
   소수~중간 규모 수용, 대규모면 SSO 재검토 ⓑ 정책 GUI 없음(정책=git JSON,
   코드리뷰로 거버넌스) — GUI 운영이 필수가 되면 그때 Ranger 재검토.
