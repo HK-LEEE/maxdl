@@ -48,6 +48,9 @@ svc = os.environ.get("SVC_DBT_PASSWORD")
 if not svc or svc == "CHANGE_ME":
     sys.exit("ERROR: SVC_DBT_PASSWORD 미설정(secrets.env)")
 users["svc-dbt"] = svc
+sup = os.environ.get("SVC_SUPERSET_PASSWORD")   # Superset 임퍼소네이션 신뢰 principal
+if sup and sup != "CHANGE_ME":
+    users["svc-superset"] = sup
 for k, v in os.environ.items():                # 사람 유저: TRINO_USER_<NAME>_PASSWORD
     if k.startswith("TRINO_USER_") and k.endswith("_PASSWORD") and v and v != "CHANGE_ME":
         users[k[len("TRINO_USER_"):-len("_PASSWORD")].lower()] = v
