@@ -235,6 +235,8 @@ kubectl exec -n maxdl-query deploy/trino-coordinator -- \
 kubeseal --fetch-cert --controller-namespace maxdl-system \
   --controller-name sealed-secrets-controller > /tmp/pub.pem
 scripts/seal-from-env.sh --cert /tmp/pub.pem --only src-db-<name> --apply
+#   <name> = 소스 논리명. 예) mynewdb → --only src-db-mynewdb
+#   (secrets-spec.yaml 의 name: 및 ingestion-map sources.<name>.secret 와 동일 문자열)
 shred -u /tmp/pub.pem
 scripts/dbt-gen-models.sh --check
 helmfile -f helmfile.yaml sync
