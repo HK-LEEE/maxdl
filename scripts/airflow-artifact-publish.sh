@@ -53,8 +53,10 @@ docker run --rm --network=host --user "$(id -u):0" \
   -e HOME=/tmp -e DBT_LOG_PATH=/tmp/dbtlogs \
   -e DBT_PROJECT_DIR=/dbtp -e DBT_MANIFEST=/dbtp/target/manifest.json \
   -v "$REPO_ROOT/dbt/maxdl_transform:/dbtp" -w /dbtp "$IMAGE" \
-  bash -c "dbt deps --profiles-dir . && DBT_PROFILES_DIR=. dbt parse --no-partial-parse --log-path /tmp/dbtlogs" \
+  bash -c "dbt deps --profiles-dir . && DBT_PROFILES_DIR=. dbt parse --no-partial-parse --log-path /tmp/dbtlogs && DBT_PROFILES_DIR=. dbt docs generate --static --no-compile --log-path /tmp/dbtlogs || true" \
   || { echo "ERROR: dbt deps/parse 실패" >&2; exit 1; }
+# dbt docs(계보/카탈로그) = OM 대체. --static 단일 HTML(manifest 기반, 무접속).
+# 아티팩트의 target/static_index.html 로 열람 or `dbt docs serve`. 추가 인프라 0.
 [[ -f "$REPO_ROOT/dbt/maxdl_transform/target/manifest.json" ]] \
   || { echo "ERROR: manifest.json 미생성" >&2; exit 1; }
 

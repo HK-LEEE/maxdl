@@ -23,8 +23,8 @@ nodePorts:
   trino: 30080                      # Trino coordinator (UI/JDBC 게이트)
   airbyte: 30081                    # Airbyte webapp
   airflow: 30082                    # Airflow webserver
-  openmetadata: 30085               # OpenMetadata UI
   superset: 30088                   # Superset
+  # (openmetadata 30085 제거 — OM 폐기, 계보/카탈로그=dbt docs)
   polaris: 30181                    # Polaris Iceberg REST (스파이크/디버그용)
 
 # -----------------------------------------------------------------------------

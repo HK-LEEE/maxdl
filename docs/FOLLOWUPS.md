@@ -10,12 +10,12 @@
 
 ### 1.1 부트스트랩 0~8단계 (전 스택 가동)
 
-7개 네임스페이스 0 비정상. 검증된 데이터 경로:
+부트스트랩 검증 데이터 경로:
 Airbyte→Polaris→SeaweedFS(path-style) / Trino→Polaris→SeaweedFS R/W /
 dbt→Trino(Iceberg TIMESTAMP6) / Superset→Trino. 엔드포인트 200:
-Trino(30080)·Airflow(30082)·Superset(30088)·OpenMetadata(30085)·
-Polaris(30181, Iceberg REST/관리 API). 양대 최고리스크(SeaweedFS path-style,
-Airbyte beta 목적지) 해소.
+Trino(30080)·Airflow(30082)·Superset(30088)·Polaris(30181, Iceberg
+REST/관리 API). 양대 최고리스크(SeaweedFS path-style, Airbyte beta 목적지)
+해소. (OpenMetadata 는 FU-9 에서 제거 — §3.0 참조. 계보=dbt docs.)
 
 ### 1.2 FU-1. Oracle 인제스션 블로커 — ✅ 해결 (A안)
 
@@ -194,9 +194,18 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
   부수: 중복 키(server/coordinator) 통합 — Stage-1 잠재버그(server.workers
   유실) 동시 수정. `helmfile template` exit 0. **라이브 무변경**(코드-only,
   컷오버 활성).
-- **5단계 재정의**: Ranger 폐기로 OM↔Ranger 연계 무의미. OM 활성화
-  (카탈로그/계보) 는 별개 독립 결정으로 분리 — 경량 대안 `dbt docs`
-  (계보·카탈로그, 추가 인프라 0) 가 후보. FU-9 접근거버넌스 범위에서 제외.
+- **5단계 = OpenMetadata 제거 확정·실행(✅)**: Ranger 폐기로 OM↔Ranger
+  무의미 + OM 은 빈 상태(서비스 0)로 ~8 pod·~6GiB 데드웨이트 + 접근
+  거버넌스는 Trino file-based 로 해결됨 → **OM 폐기**. 라이브
+  `helm uninstall openmetadata/openmetadata-deps` + `maxdl-governance` NS
+  삭제(타 NS 무영향 확인). IaC: helmfile 릴리스·repo, charts/openmetadata,
+  deploy/k8s/openmetadata, sealed(airflow/mysql-secrets), secrets-spec/
+  env.example OM 항목, namespaces·globals(30085) 제거. helmfile build OK
+  (9→7 릴리스). 계보/카탈로그 = **dbt docs**(`dbt docs generate --static`
+  를 artifact-publish 에 추가, manifest 기반 단일 HTML, 추가 인프라 0 —
+  `target/static_index.html` or `dbt docs serve`). 계획서 거버넌스=OM
+  결정 의도적 번복(근거 기록). 잔여: ARCHITECTURE/INSTALL/RUNBOOK 문서의
+  OM 서술은 후속 문서패스 필요(상태 SSOT 는 본 문서).
 - **남은 것 = 컷오버 1회**(동시 충족): ① Trino PASSWORD 인증 ON +
   access-control=file ② `TRINO_METHOD=ldap` 플립(dbt/Airflow) ③ Superset
   자산 import(svc-superset+impersonate). 1·2·3·4단계 코드·자격 전부 준비
