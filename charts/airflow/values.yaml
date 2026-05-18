@@ -22,17 +22,22 @@ images:
 env:
   - name: TRINO_HOST
     value: "trino.maxdl-query.svc.cluster.local"
+  # FU-9 컷오버 게이트(기본=현 무인증 동작, 비파괴). 컷오버 시 동시 플립:
+  #   TRINO_PORT 8080→8443, TRINO_METHOD none→ldap, TRINO_HTTP_SCHEME http→https
   - name: TRINO_PORT
     value: "8080"
   - name: TRINO_USER
     value: "svc-dbt"
-  # 인증 게이트: 기본 none(현 무인증 — 비파괴). 컷오버 시 "ldap" 로 플립
-  # → dbt-trino 가 svc-dbt:TRINO_PASSWORD 로 파일기반 PASSWORD 인증.
-  # FU-9 컷오버 게이트: 기본 none(현 무인증 — 비파괴). 컷오버 시 "ldap".
-  # ⚠ 컷오버 전제: dbt-trino ldap 인증은 HTTPS 요구(트라이얼서 SSL 에러
-  #   확인) → FU-7(TLS) 선행 필수. TLS 전엔 ldap 플립 불가(FOLLOWUPS FU-9).
   - name: TRINO_METHOD
     value: "none"
+  - name: TRINO_HTTP_SCHEME
+    value: "http"
+  # self-signed Trino 신뢰: trino-tls-ca 마운트본을 trino python client 가
+  # 신뢰(verify 끄지 않음). https 아닐 땐 무영향 → 항상 설정(비파괴).
+  - name: REQUESTS_CA_BUNDLE
+    value: "/etc/trino-ca/tls.crt"
+  - name: SSL_CERT_FILE
+    value: "/etc/trino-ca/tls.crt"
   - name: AIRBYTE_API
     value: "http://airbyte-airbyte-server-svc.maxdl-ingest:8001"
   # 동시성 상한(단일노드 Trino 과부하/OOM 방지) + DAG당 동시 run 1개
@@ -90,9 +95,15 @@ scheduler:
   extraVolumes: &artVols
     - name: artifact
       emptyDir: {}
+    - name: trino-ca               # self-signed Trino 신뢰(REQUESTS_CA_BUNDLE)
+      secret:
+        secretName: trino-tls-ca
   extraVolumeMounts: &artMounts
     - name: artifact
       mountPath: /opt/airflow/artifact
+    - name: trino-ca
+      mountPath: /etc/trino-ca
+      readOnly: true
   extraInitContainers: &artInit
     - name: fetch-artifact
       image: maxdl/airflow:fu3

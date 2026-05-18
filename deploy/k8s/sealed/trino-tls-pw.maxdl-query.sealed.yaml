@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: trino-tls-pw
+  namespace: maxdl-query
+spec:
+  encryptedData:
+    keystore-password: AgB1S4iYCuZM3iQEzqvCvcLI8Kp0gSbll7VVZCkehNBer/gix2CSAe86hCB1kxldHmgiBySiLhwyaMjtqRwnC87Pb1Y8Hg1V91juVLyeiYry24cO7RkxKI4ITLTPvYxyZ5IpLHSZMAJ3gf57nPPxCgZdlsUHWZwsfyv6NgjOnVF9RIioMuBwGF7tUSwlVq/rtLoX06KYwW7NELRI4CeSkSJxWmzFBxfk3daDElgNmgwP2OU6bCvznrNpMFQP7gzPwhDZF4DEZeEVHijHX/OgRAPgGAhPm0+mWx29Ji40Lb9Ykobh3iFcYeLBP58b69zrwWb01n3Ph3z0wUuzpAwDQGcUVon0kM9FbQuP9yONc/N4EqF9yyjEtt2d357ooFuU5pU9GV4bN28cNymeTJnlqY7OaQYkFigpWp/j/Wr+5E56NpNfBC3D3e+6x1pOeX1QGYlb7lnzUN3lK8tYW7VlHOrDYty1AnmFO1RpJSdJmHZDoE6odczJIkhJCSfhAER4LOmvZFRHRpaMI8WcJ5JkUqBOwjli3BuTcarjRQ2n0aGyjsAQVviaqDFHPyhEM3wyYjf2fkS+kh+TIKS3ehs8sXVw67btOuQTU47R6UjwwtKH/wbXRGqZ3JgKbVIETMR2a5tL0HcD9s1CyLVK/ABBxZYQls31Pmfkxry5Khnbqc7rNIfvughc0T9tI0E6oWQFe21Axo+CRMremeseYmQ97uHlRQHArpQX313SKU8=
+  template:
+    metadata:
+      name: trino-tls-pw
+      namespace: maxdl-query
+    type: Opaque

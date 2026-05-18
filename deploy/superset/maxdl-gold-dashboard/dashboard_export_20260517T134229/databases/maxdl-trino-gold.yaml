@@ -3,7 +3,9 @@
 # import 시 trino-svc-superset(SUPERSET_TRINO_PASSWORD)로 주입. 인증 OFF 인
 # 현재는 미적용(라이브 Superset 무변경) — 4단계+컷오버와 함께 import.
 database_name: maxdl-trino-gold
-sqlalchemy_uri: "trino://svc-superset@trino.maxdl-query.svc.cluster.local:8080/iceberg_gold"
+# FU-9: https/8443(self-signed) + svc-superset. connect_args 로 http_scheme=
+# https + verify=마운트된 trino-tls-ca(검증 끄지 않음). 비번은 컷오버 import.
+sqlalchemy_uri: "trino://svc-superset@trino.maxdl-query.svc.cluster.local:8443/iceberg_gold"
 cache_timeout: null
 expose_in_sqllab: true
 allow_run_async: false
@@ -13,7 +15,10 @@ allow_dml: false
 allow_file_upload: false
 extra:
   metadata_params: {}
-  engine_params: {}
+  engine_params:
+    connect_args:
+      http_scheme: https
+      verify: /etc/trino-ca/tls.crt
   metadata_cache_timeout: {}
   schemas_allowed_for_file_upload: []
 impersonate_user: true
