@@ -12,31 +12,33 @@
 
 ---
 
-## §0. 폐쇄망에서 반드시 알아야 할 1가지 (정직한 제약)
+## §0. 폐쇄망에서 전부 됨 (인터넷 불요)
 
 SSOT 는 `config/ingestion-map.yaml`. Airbyte 커넥션·dbt 모델·DAG 가
-전부 이걸 따른다. **단, 폐쇄망에는 작업이 두 군데로 갈린다:**
+전부 이걸 따른다. **새 DB·새 테이블 추가 전 과정이 폐쇄망 안에서
+완결된다 — 온라인 호스트 불요, 이미지 재빌드 불요.**
 
-| 작업 | 어디서 | 인터넷 |
-|---|---|---|
-| ingestion-map 편집, 시크릿 봉인(`seal-from-env.sh --cert`), Airbyte 커넥션 적용(`airbyte-apply-ingestion-map.sh`, in-cluster), Trino 검증, `dbt run` | **폐쇄망 호스트 B** | 불요 (✅) |
-| dbt 아티팩트 **재생성·재발행**(`airflow-artifact-publish.sh`) | **온라인 호스트 A** | 필요 — `dbt deps` 가 허브 접근 |
+근거(코드 확인):
+- `dbt_packages/`(dbt_utils/expectations/dbt_date)를 **레포에 vendoring**
+  (`package-lock.yml` 핀과 함께 커밋). `dbt parse`/`dbt run` 은 present
+  한 dbt_packages 로 동작 → `dbt deps`(허브 접근) **영구 불필요**.
+- `airflow-artifact-publish.sh` 는 vendored dbt_packages 감지 시 `dbt
+  deps` 를 **자동 스킵**(폐쇄망 무접속). 패키지 *버전 갱신* 때만
+  `ARTIFACT_REFRESH_DEPS=1`(온라인) 로 재설치 후 재커밋 — 이건 평상
+  운영(테이블/DB 추가)과 무관한 별도 유지보수.
+- DAG·dbt 는 이미지에 안 굽고 SeaweedFS 아티팩트 tar 로 배포(아티팩트
+  패턴) → 새 소스/테이블에 이미지 재빌드 불요.
 
-이유: `dbt_packages/`(dbt_utils/expectations)는 레포에 vendored 라
-**런타임·`dbt run` 은 폐쇄망에서 자족**이지만, 아티팩트 *발행* 단계의
-`dbt deps && dbt parse` 는 허브를 친다. 그래서 **DAG/dbt 모델이 바뀌면
-(= 새 테이블·새 소스 항상 해당) 아티팩트는 온라인 호스트 A 에서
-재생성해 운반**한다. INSTALL_AIRGAP 의 "A 온라인 빌드 → 운반 → B" 와
-동일 사이클. (이미지 재빌드는 불요 — 아티팩트 패턴.)
-
-> 따라서 §A·§B 모두: **(1) 온라인 호스트 A 에서 SSOT 편집+아티팩트
-> 재생성+재번들 → (2) 운반 → (3) 폐쇄망 호스트 B 에서 적용·검증** 구조.
+> 따라서 §A·§B 전부 **폐쇄망 호스트 한 곳**에서: SSOT 편집 → 모델
+> 생성·아티팩트 재발행(무접속) → 적용 → 검증. (단, 폐쇄망 호스트에
+> 레포 체크아웃이 vendored `dbt_packages/` 를 포함해야 함 — git 추적
+> 되므로 정상 clone/운반본이면 자동 포함.)
 
 ---
 
 ## §A. 흐름 A — 기존 DB 에 테이블 추가 (쉬움)
 
-### A-1. [호스트 A] ingestion-map 에 한 줄 추가
+### A-1. [폐쇄망] ingestion-map 에 한 줄 추가
 `config/ingestion-map.yaml` 의 해당 `sources.<DB>.tables:` 에 추가.
 모드 규칙(헤더와 동일): **merge = PK 있고 시간커서 NOT NULL / 그 외 replica**.
 
@@ -47,23 +49,22 @@ SSOT 는 `config/ingestion-map.yaml`. Airbyte 커넥션·dbt 모델·DAG 가
 ```
 > 대문자 테이블명(MSSQL/Oracle)은 **원본 그대로**(소문자화 금지).
 
-### A-2. [호스트 A] seed 메타 추가 (dbt-gen 전제)
+### A-2. [폐쇄망] seed 메타 추가 (dbt-gen 전제)
 `config/source-schema.json` 에 새 테이블의 컬럼/PK 인벤토리를 추가
 (replica 도 PK 보유). 없으면 `dbt-gen-models.sh` 가 **즉시 실패**
 (fallback 없음 — 의도된 안전장치). 조사 방법은 ADD_NEW_DATABASE §2.
 
-### A-3. [호스트 A] 모델 생성 + 아티팩트 재발행 + 재번들
+### A-3. [폐쇄망] 모델 생성 + 아티팩트 재발행 (무접속)
 ```bash
 scripts/dbt-gen-models.sh            # ingestion-map → stg_/int_ + sources.yml + seed (멱등, 무접속)
 scripts/dbt-gen-models.sh --check    # 드리프트 0 확인
-scripts/airflow-artifact-publish.sh  # dbt deps+parse → 새 아티팩트 tar (★ 온라인 필요)
+scripts/airflow-artifact-publish.sh  # dbt parse → 새 아티팩트 tar 를 폐쇄망 SeaweedFS 업로드
+                                     #   (vendored dbt_packages → deps 스킵, 무접속)
 ```
-> 폐쇄망 SeaweedFS 가 호스트 A 에서 도달 불가하면, 아티팩트 tar 를
-> 매체로 운반해 폐쇄망 SeaweedFS 에 올리거나 `airgap-bundle`/운반 절차에
-> 포함(INSTALL_AIRGAP §운반). 변경 레포(ingestion-map/source-schema/
-> 생성된 models)도 함께 운반.
+> 전제: docker + `maxdl/airflow:fu3` 이미지(설치 시 적재됨) + 폐쇄망
+> SeaweedFS 도달. 전부 폐쇄망 내 충족. 온라인/운반 불요.
 
-### A-4. [호스트 B] 폐쇄망에 적용
+### A-4. [폐쇄망] 폐쇄망에 적용
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; export PATH="/usr/local/bin:$PATH"
 # (1) 변경 레포 반영 후 — Airbyte 커넥션 카탈로그를 ingestion-map 에 수렴(in-cluster, 무접속)
@@ -74,7 +75,7 @@ kubectl -n maxdl-orchestrate rollout restart deploy/airflow-scheduler deploy/air
 또는 변경 레포·아티팩트 반영 후 `helmfile -f helmfile.yaml sync` —
 airbyte postsync(커넥션 수렴)·airflow presync 재실행으로 동일 수렴.
 
-### A-5. [호스트 B] 검증
+### A-5. [폐쇄망] 검증
 ```bash
 # Airbyte 동기화 1회(해당 소스 DAG 트리거 or UI) 후 Bronze 행수 확인
 kubectl exec -n maxdl-query deploy/trino-coordinator -- \
@@ -90,7 +91,7 @@ kubectl exec -n maxdl-query deploy/trino-coordinator -- \
 기존 4소스(maxplatform/maxapex/pfms/maxtdoracle)와 **완전 동일 패턴**.
 새 이름을 `mynewdb`(PostgreSQL 예시)로 가정.
 
-### B-1. [호스트 A] 시크릿 SSOT 3곳에 블록 추가
+### B-1. [폐쇄망] 시크릿 SSOT 3곳에 블록 추가
 **(a)** `deploy/secrets/secrets.env.example`(커밋 템플릿) +
 `deploy/secrets/secrets.env`(실제값, 미커밋) 에 블록 추가 — 기존
 `SRC_MAXPLATFORM_*` 패턴 복제:
@@ -120,7 +121,7 @@ SRC_MYNEWDB_TYPE='postgres'          # postgres | mssql | oracle
       # Oracle 이면: serviceName: SRC_MYNEWDB_SERVICENAME
 ```
 
-### B-2. [호스트 A] ingestion-map 에 소스 블록 추가
+### B-2. [폐쇄망] ingestion-map 에 소스 블록 추가
 `config/ingestion-map.yaml` `sources:` 아래(기존 소스 블록과 동형):
 ```yaml
   mynewdb:
@@ -134,18 +135,18 @@ SRC_MYNEWDB_TYPE='postgres'          # postgres | mssql | oracle
 ```
 + §A-2 와 동일하게 각 테이블을 `config/source-schema.json` 에 인벤토리.
 
-### B-3. [호스트 A] DAG 소스 목록에 등록
+### B-3. [폐쇄망] DAG 소스 목록에 등록
 `dags/maxdl_factory.py`:
 ```python
 SOURCES = ("maxplatform", "pfms", "maxapex", "maxtdoracle", "mynewdb")
 ```
 > 이 파일은 아티팩트로 배포됨 → **이미지 재빌드 불요**(B-5 재발행이면 충분).
 
-### B-4. [호스트 A] 모델 생성 + 아티팩트 재발행 + 재번들
+### B-4. [폐쇄망] 모델 생성 + 아티팩트 재발행 (무접속)
 §A-3 와 동일: `dbt-gen-models.sh` → `--check` → `airflow-artifact-publish.sh`
-(★온라인). 변경 레포 + 아티팩트 운반.
+(vendored dbt_packages → `dbt deps` 스킵, 폐쇄망 무접속).
 
-### B-5. [호스트 B] 폐쇄망 봉인·적용
+### B-5. [폐쇄망] 폐쇄망 봉인·적용
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; export PATH="/usr/local/bin:$PATH"
 # (1) 폐쇄망 클러스터 키로 새 시크릿만 재봉인·적용 (평문 디스크 미기록)
@@ -163,7 +164,7 @@ kubectl -n maxdl-orchestrate rollout restart deploy/airflow-scheduler deploy/air
 > (sealed postsync·airbyte postsync·airflow presync 가 동일 결과로 수렴.
 > 단 새 시크릿은 sealed yaml 이 먼저 생성돼 있어야 하므로 (1) 선행).
 
-### B-6. [호스트 B] 검증
+### B-6. [폐쇄망] 검증
 - [ ] `kubectl get secret src-db-mynewdb -n maxdl-ingest` 존재
 - [ ] Airbyte 소스 `src-mynewdb` connection-check succeeded
 - [ ] `SELECT count(*) FROM iceberg_bronze.mynewdb.orders` > 0
@@ -196,10 +197,11 @@ kubectl rollout restart deployment trino-coordinator -n maxdl-query
 - **SeaweedFS 공유 주의**: 새 소스 적재는 `maxdl-warehouse` 전용 버킷
   안에서만. `maxplatform-*`/`maxapex-*` 버킷·`s3.json` 절대 미접근
   (운영 S3 다운 위험).
-- **폐쇄망 아티팩트 제약(반복)**: `airflow-artifact-publish.sh` 의
-  `dbt deps` 는 인터넷 필요 → **온라인 호스트 A 에서만** 재발행, 결과
-  운반. 폐쇄망에서 직접 실행 시 실패(설계상, fallback 없음). `dbt run`
-  자체와 `dbt-gen-models.sh` 는 폐쇄망 무접속 동작(packages vendored).
+- **아티팩트 재발행은 폐쇄망 무접속**: `dbt_packages/` vendored(레포
+  커밋) → `airflow-artifact-publish.sh` 가 `dbt deps` 자동 스킵, `dbt
+  parse` 만. 단 폐쇄망 레포 체크아웃에 `dbt_packages/` 가 포함돼야 함
+  (git 추적되므로 정상 운반본이면 자동). 패키지 *버전 갱신* 시에만
+  온라인에서 `ARTIFACT_REFRESH_DEPS=1` 재실행 후 재커밋(평상 운영 무관).
 - **merge↔replica 오분류 위험**: 커서 nullable 인데 merge 로 두면
   Airbyte 증분 전체 실패. 불확실하면 replica(안전). 근거·사례
   ADD_NEW_DATABASE §0.2 / FOLLOWUPS FU-4.

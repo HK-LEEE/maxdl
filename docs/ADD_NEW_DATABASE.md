@@ -247,8 +247,9 @@ kubectl exec -n maxdl-orchestrate deploy/airflow-scheduler -- \
 > **이미지 재빌드 불요(아티팩트 패턴).** DAG·dbt 는 이미지에 동봉되지
 > 않고 SeaweedFS 아티팩트 tar 로 배포된다. `SOURCES` 를 바꿨으면
 > `scripts/airflow-artifact-publish.sh` 로 아티팩트만 재발행하고 Airflow
-> 컴포넌트를 재기동(initContainer 가 refetch)하면 된다. 폐쇄망에서는
-> 재발행이 온라인 호스트 몫(`dbt deps` 인터넷 필요) — `ADD_DB_TABLE_AIRGAP.md` §0.
+> 컴포넌트를 재기동(initContainer 가 refetch)하면 된다. `dbt_packages/`
+> 가 레포 vendored 라 재발행도 **폐쇄망 무접속**(`dbt deps` 자동 스킵)
+> — 상세 `ADD_DB_TABLE_AIRGAP.md` §0.
 
 ---
 

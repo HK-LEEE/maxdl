@@ -7,8 +7,10 @@
 #  → 새 테이블/모델 추가 시 "이미지 재빌드" 불필요(아티팩트 재발행 + 롤아웃만).
 #
 # 동작:
-#   1) maxdl/airflow 이미지로 `dbt deps && dbt parse` (manifest.json 생성, 무접속)
-#   2) dbt/maxdl_transform(+target) + dags 를 tar.gz
+#   1) maxdl/airflow 이미지로 `dbt parse`(manifest.json). dbt_packages 는
+#      레포 vendored → dbt deps(허브) 불필요 = 폐쇄망 완전 자족·온라인 불요.
+#      패키지 갱신 시에만 ARTIFACT_REFRESH_DEPS=1(온라인) 로 deps 재실행.
+#   2) dbt/maxdl_transform(+target+dbt_packages) + dags 를 tar.gz
 #   3) s3artifact.py 로 s3://<bucket>/<prefix>/maxdl-airflow-<버전>.tgz 업로드
 #
 # 환경변수화(전부 env, 미설정 시 seaweedfs-s3 시크릿에서 보충):
@@ -41,20 +43,35 @@ export ARTIFACT_S3_ENDPOINT="${ARTIFACT_S3_ENDPOINT:-http://localhost:8333}"
 
 echo "= 아티팩트 버전: $VER  → s3://$ARTIFACT_S3_BUCKET/$PREFIX/maxdl-airflow-$VER.tgz"
 
-# 1) manifest 생성 (이미지의 dbt 로, 무접속 parse)
-echo "= dbt deps + parse (이미지 $IMAGE)"
-# 빌드(온라인)측: dbt deps 로 패키지 설치 후 parse. --network=host 로 컨테이너
-# DNS 해소(이 프로젝트 알려진 해법). 설치된 dbt_packages 는 아티팩트에 포함
-# → 폐쇄망 런타임은 deps 불필요(자족).
+# 1) manifest 생성 (이미지의 dbt 로 parse)
+# dbt_packages 는 레포에 vendoring(.gitignore 제외, package-lock.yml 핀).
+#   → 평소엔 dbt deps(허브 접근) 불필요 = 폐쇄망 완전 자족, 온라인 호스트
+#     불요. dbt parse/run 은 present 한 dbt_packages 로 동작.
+#   → 패키지 버전 갱신 시에만 ARTIFACT_REFRESH_DEPS=1 (온라인에서) 으로
+#     dbt deps 재실행 후 갱신된 dbt_packages/+package-lock.yml 를 재커밋.
+# fallback 없음: vendored 도 없고 REFRESH 도 아니면 즉시 실패.
+PKG_DIR="$REPO_ROOT/dbt/maxdl_transform/dbt_packages"
+if [[ "${ARTIFACT_REFRESH_DEPS:-0}" = 1 ]]; then
+  DEPS_CMD="dbt deps --profiles-dir ."   # 온라인 전용(허브 접근)
+  echo "= dbt deps(REFRESH) + parse — ARTIFACT_REFRESH_DEPS=1 (온라인 필요)"
+elif [[ -d "$PKG_DIR" && -n "$(ls -A "$PKG_DIR" 2>/dev/null)" ]]; then
+  DEPS_CMD="echo 'dbt deps 생략 — vendored dbt_packages 사용(폐쇄망 무접속)'"
+  echo "= dbt parse (vendored dbt_packages, 무접속) — 이미지 $IMAGE"
+else
+  echo "ERROR: dbt_packages 미존재 + ARTIFACT_REFRESH_DEPS!=1." >&2
+  echo "  폐쇄망: 레포에 vendored dbt_packages 가 함께 있어야 함." >&2
+  echo "  온라인 갱신: ARTIFACT_REFRESH_DEPS=1 로 재실행 후 재커밋." >&2
+  exit 1
+fi
 # 이미지 ENV(DBT_PROJECT_DIR=아티팩트경로)는 빌드 컨테이너에 무의미 → override.
 # 컨테이너를 호스트 uid 로 실행 → 마운트 디렉토리(target/dbt_packages) 쓰기 가능.
-# 로그/HOME 은 컨테이너 내 /tmp(쓰기 가능)로.
+# 로그/HOME 은 컨테이너 내 /tmp(쓰기 가능)로. --network=host 는 DNS 해소용.
 docker run --rm --network=host --user "$(id -u):0" \
   -e HOME=/tmp -e DBT_LOG_PATH=/tmp/dbtlogs \
   -e DBT_PROJECT_DIR=/dbtp -e DBT_MANIFEST=/dbtp/target/manifest.json \
   -v "$REPO_ROOT/dbt/maxdl_transform:/dbtp" -w /dbtp "$IMAGE" \
-  bash -c "dbt deps --profiles-dir . && DBT_PROFILES_DIR=. dbt parse --no-partial-parse --log-path /tmp/dbtlogs && DBT_PROFILES_DIR=. dbt docs generate --static --no-compile --log-path /tmp/dbtlogs || true" \
-  || { echo "ERROR: dbt deps/parse 실패" >&2; exit 1; }
+  bash -c "$DEPS_CMD && DBT_PROFILES_DIR=. dbt parse --no-partial-parse --log-path /tmp/dbtlogs && DBT_PROFILES_DIR=. dbt docs generate --static --no-compile --log-path /tmp/dbtlogs || true" \
+  || { echo "ERROR: dbt parse 실패" >&2; exit 1; }
 # dbt docs(계보/카탈로그) = OM 대체. --static 단일 HTML(manifest 기반, 무접속).
 # 아티팩트의 target/static_index.html 로 열람 or `dbt docs serve`. 추가 인프라 0.
 [[ -f "$REPO_ROOT/dbt/maxdl_transform/target/manifest.json" ]] \
