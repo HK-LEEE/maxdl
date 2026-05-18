@@ -38,6 +38,9 @@ env:
     value: "/etc/trino-ca/tls.crt"
   - name: SSL_CERT_FILE
     value: "/etc/trino-ca/tls.crt"
+  # ②: dbt-trino 인증서 검증 활성 — profiles cert= 이 CA 경로(검증 OFF 아님)
+  - name: TRINO_CERT
+    value: "/etc/trino-ca/tls.crt"
   - name: AIRBYTE_API
     value: "http://airbyte-airbyte-server-svc.maxdl-ingest:8001"
   # 동시성 상한(단일노드 Trino 과부하/OOM 방지) + DAG당 동시 run 1개

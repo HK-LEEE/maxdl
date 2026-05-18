@@ -176,8 +176,9 @@ ingestion-map.sh`), Superset admin 재설정, dbt 아티팩트 발행·password-
 - **완전 클린 `helmfile apply` 단일 E2E 는 폐기형 호스트(0.6)에서만 미실증**
   — 단계별·구성요소별로는 검증됨. 폐쇄망 첫 배포 전 리허설 강력 권장
   (FOLLOWUPS FU-6 잔여).
-- **dbt-trino 1.10.1 인증서 검증 기본 off** — TLS 전송+인증은 동작,
-  내부 self-signed 라 수용. 강화 필요 시 `cert:True`(추후).
+- **dbt-trino 인증서 검증 — 활성됨**(②). profiles `cert`=TRINO_CERT
+  (Airflow=`/etc/trino-ca/tls.crt`) → self-signed CA 검증 ON·통과. 빈
+  기본값은 레거시(검증 off, 비-cutover 경로 비파괴).
 - **정책 변경 시 coordinator 수동 rollout restart** — 차트가 access-control
   ConfigMap 변경으로 자동 롤아웃 안 함(§8).
 - **SeaweedFS 공유 주의** — 운영 시스템과 동거면 `maxdl-warehouse` 전용
