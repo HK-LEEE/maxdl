@@ -106,7 +106,9 @@ sources:
   mynewdb:
     connector: source-postgres        # source-postgres | source-mssql | source-oracle
     secret: src-db-mynewdb            # 1단계에서 만든 SealedSecret 이름
-    replicationMethod: standard       # CDC 미사용
+    replicationMethod: standard       # 기록용 필드(스크립트 미참조). CDC 는
+                                      # 이 필드로 안 켜짐 — 별도 트랙
+
     bronzeNamespace: mynewdb          # Bronze 네임스페이스(=소스 이름 권장)
     tables:
       - { name: "public.orders", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
