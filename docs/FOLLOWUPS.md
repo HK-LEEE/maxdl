@@ -300,6 +300,17 @@ amd64 일치 시 보장(MANIFEST 비교 게이트), 첫 배포 전 동일버전 
 → 자동은 B-2 한 줄뿐, secrets.env 실제값·무결성·검증 게이트는 수동
 임을 명시한 절 포함.
 
+### 3.0e 폐쇄망 DB/테이블 추가 가이드 — ✅ 완료
+
+`docs/ADD_DB_TABLE_AIRGAP.md` — 운영 중 소스 추가의 쉬운 순서. 흐름
+A(기존 DB 에 테이블만, 시크릿 불요) / 흐름 B(새 소스 DB, secrets.env+
+secrets-spec+ingestion-map+SOURCES) 분리. **정직한 폐쇄망 제약 명시**:
+`airflow-artifact-publish.sh` 의 `dbt deps` 는 인터넷 필요 → 아티팩트
+재발행은 온라인 호스트 A 몫(운반), 단 `dbt-gen`/`dbt run` 은 vendored
+packages 로 폐쇄망 자족. 이미지 재빌드 불요(아티팩트 패턴). 기존
+`ADD_NEW_DATABASE.md`(깊은 레퍼런스)의 stale "이미지 재빌드" 2곳을
+아티팩트 패턴으로 정정, 상호 포인터로 모순 제거.
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
