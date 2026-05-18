@@ -120,6 +120,14 @@ mynewdb,public.audit_raw,replica,,
 
 ## 3단계: Airbyte — 소스/커넥션 생성 및 동기화
 
+> **✅ 이 3단계는 이제 자동화됨.** `secrets.env`(자격) + `ingestion-map.yaml`
+> (테이블/모드)만 채우면 `scripts/airbyte-apply-ingestion-map.sh` 가 소스·
+> 목적지·커넥션을 멱등 생성/수렴하고 Airflow Variable 까지 세팅한다
+> (helmfile airbyte hook 에 배선됨). 아래는 자동화가 내부적으로 수행하는
+> 절차의 설명(수동 디버깅/이해용). Oracle 커뮤니티 커넥터 등록
+> (`register-oracle-connector.sh`)과 svc-airbyte Polaris 자격 캡처
+> (`catalog-bootstrap.sh`, 클린 재구축 시 201 자동)도 자동 경로에 포함.
+
 ### 3.1 소스 커넥터 정의
 
 - PostgreSQL → `source-postgres`, MSSQL → `source-mssql` 은 Airbyte 기본 제공.
