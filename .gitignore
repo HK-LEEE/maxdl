@@ -8,6 +8,10 @@ kubeconfig*
 .env
 .env.*
 !.env.example
+# 시크릿 SSOT 평문 — .example 만 커밋
+deploy/secrets/secrets.env
+deploy/secrets/*.env
+!deploy/secrets/secrets.env.example
 
 # dbt
 dbt/**/target/
