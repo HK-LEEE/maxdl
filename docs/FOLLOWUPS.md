@@ -282,6 +282,19 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
 거버넌스·검증·운영) 분리, 단계별 검증 게이트·실패 시 행동·정직한 잔여
 포함. 흩어진 airgap/secrets/INSTALL/RUNBOOK/FU-9 절차를 한 장으로.
 
+### 3.0d 폐쇄망 단일 설치 절차서 + OS자동화 스크립트 — ✅ 완료
+
+`docs/INSTALL_AIRGAP.md` — **OS 준비~가동을 한 파일**로 열거(A 온라인
+빌드 → B 폐쇄망 OS/Docker/k3s/이미지 → C 시크릿/helmfile/검증 → D 정직
+잔여). 신규 스크립트 2종으로 OS레벨 갭(폐쇄망 호스트 Docker·k3s 자체
+설치 불가) 해소: `scripts/airgap-os-deps.sh`(온라인: Docker .deb closure
++ kubectl/helm/helmfile/kubeseal + k3s air-gap 자산 → os-deps.tar.gz),
+`scripts/airgap-host-setup.sh`(폐쇄망: dpkg 오프라인 Docker → CLI →
+k3s INSTALL_K3S_SKIP_DOWNLOAD → airgap-load 이미지 적재). bash -n 통과.
+정직: 폐쇄망 대상이라 실행검증 불가 — 정석법대로 작성, Ubuntu 버전·
+amd64 일치 시 보장(MANIFEST 비교 게이트), 첫 배포 전 동일버전 폐기형
+호스트 리허설 권장.
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
