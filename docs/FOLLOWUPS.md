@@ -1,194 +1,151 @@
-# maxdl 후속과제 (운영 전환 전)
+# maxdl 후속과제 현황 (운영 전환 전)
 
-부트스트랩 0~8단계 완료 후, 운영 전 해결할 항목. 우선순위 순.
-상태·근거는 플랜 현황 / `docs/RUNBOOK.md` 참조.
+부트스트랩 0~8단계 + 후속과제(FU-1~FU-8) 진행 현황을 **해결 / 잔여(제약) /
+남은·보류** 로 통합 정리. 최종 갱신: 2026-05-18.
+상태·근거 상세는 플랜 현황(`mes-lims-qms-fluffy-bubble.md`) / `docs/RUNBOOK.md` 참조.
 
 ---
 
-## FU-1. Oracle 인제스션 블로커 — ✅ 해결 (A안)
+## 1. ✅ 해결 완료
 
-**문제**: Airbyte community 레지스트리의 Oracle 소스는 enterprise 전용
-(`source-oracle-enterprise`) → OSS 에서 HTTP 403 entitlement.
+### 1.1 부트스트랩 0~8단계 (전 스택 가동)
 
-**해결**: 커뮤니티 `airbyte/source-oracle:0.5.8`(Docker Hub 공개, postgres/
-mssql 와 동일 라이선스 티어)를 **커스텀 소스 정의**로 등록 → entitlement 게이트
-비대상(`custom:true, enterprise:false, isEntitled:true`). connection-check
-succeeded. 4/4 소스 전부 검증.
+7개 네임스페이스 0 비정상. 검증된 데이터 경로:
+Airbyte→Polaris→SeaweedFS(path-style) / Trino→Polaris→SeaweedFS R/W /
+dbt→Trino(Iceberg TIMESTAMP6) / Superset→Trino. 엔드포인트 200:
+Trino(30080)·Airflow(30082)·Superset(30088)·OpenMetadata(30085)·
+Polaris(30181, Iceberg REST/관리 API). 양대 최고리스크(SeaweedFS path-style,
+Airbyte beta 목적지) 해소.
 
-**핵심 함정**: `create_custom` 은 kubectl port-forward 경유 큰 POST 에서
-HTTP 000(연결 리셋). **반드시 in-cluster 호출**.
+### 1.2 FU-1. Oracle 인제스션 블로커 — ✅ 해결 (A안)
+
+community 레지스트리 Oracle 소스가 enterprise 전용(HTTP 403). 커뮤니티
+`airbyte/source-oracle:0.5.8` 을 **커스텀 소스 정의**로 등록 → entitlement
+비대상. connection-check succeeded, 4/4 소스 검증.
+함정: `create_custom` 은 in-cluster 호출 필수(port-forward 시 HTTP 000).
 재현: `deploy/k8s/airbyte/register-oracle-connector.sh`(idempotent).
 
----
+### 1.3 FU-2. 권한 최소화 (root → 전용 principal) — ✅ 해결 〔보안〕
 
-## FU-2. 권한 최소화 (root → 전용 principal) — ✅ 해결 〔P0·보안〕
+Polaris principal `svc-trino`(bronze RO + silver/gold RW)·`svc-airbyte`
+(bronze RW only) 생성, root 는 부트스트랩 전용. Positive/Negative 검증 통과
+(svc-trino bronze 쓰기 거부, Airbyte 목적지 check succeeded). RBAC 배선은
+`catalog-bootstrap.sh` idempotent 반영, 자격은 SealedSecret 관리.
 
-**배경**: 스파이크 편의로 Polaris `root` principal 을 Trino(`polaris-oauth`)·
-Airbyte 목적지가 공유 사용 중. 과도 권한.
+### 1.4 FU-3. Airflow 커스텀 이미지 + Cosmos 오케스트레이션 — ✅ 해결
 
-**범위**:
-- Polaris 서비스별 principal 생성: `svc-trino`(카탈로그 R/W),
-  `svc-airbyte`(bronze W), `svc-dbt`(silver/gold R/W) — 카탈로그롤 분리·최소 grant
-- SealedSecret(`polaris-oauth`, Airbyte 목적지 client) 교체, root 는
-  부트스트랩 전용으로 봉인
-- `catalog-bootstrap.sh` 에 principal/role 생성 idempotent 반영
+- 커스텀 이미지 `maxdl/airflow:fu3`(apache/airflow 3.2.1 +
+  astronomer-cosmos[kubernetes] 1.14.1 + dbt-trino 1.10.1 + dbt-core
+  1.11.10 + providers-airbyte, dbt 프로젝트·DAG 동봉, 빌드시 manifest
+  베이크). `k3d image import` → `pullPolicy: Never`.
+- `maxdl_factory.py`: Airbyte API sync(폴링) → Cosmos DbtTaskGroup
+  (staging+intermediate, 소스별) → 전 소스 완료 시 Asset 트리거로
+  transform_gold(marts). Airflow 3.x API(`airflow.sdk`, providers.standard)
+  반영.
+- **동시성 상한 적용**: `MAX_ACTIVE_RUNS_PER_DAG=1`,
+  `MAX_ACTIVE_TASKS_PER_DAG=4`, `PARALLELISM=8`(env 가 chart cfg 보다 우선·
+  KE pod 전파 확실). unpause 자동 scheduled run 과 manual 트리거가 동일
+  Airbyte 커넥션에서 충돌하던 문제를 구조적으로 차단.
+- **E2E 검증 완료**: 4개 ingest DAG + transform_gold 전부 성공
+  (pfms 9/9, maxtdoracle 3/3, maxapex 149/149, maxplatform 209/209,
+  transform_gold 5/5).
 
-**완료조건**: 각 서비스가 전용 principal 로 정상 동작 + root 토큰 미사용 확인,
-권한 경계 negative test(Airbyte principal 로 silver 쓰기 거부 등).
-**해결**: Polaris principal `svc-trino`(bronze RO + silver/gold RW),
-`svc-airbyte`(bronze RW only) 생성. polaris-oauth(Trino)·Airbyte 목적지
-자격을 전용 principal 로 교체, root 는 부트스트랩 전용. Positive/Negative
-검증 통과(svc-trino bronze 쓰기 거부, Airbyte 목적지 check succeeded).
-RBAC 배선 `catalog-bootstrap.sh` idempotent 반영. 자격은 SealedSecret 관리.
+### 1.5 FU-4. 실 인제스션 매핑 + dbt 모델 — ✅ 해결
 
----
+- `config/ingestion-map.yaml`(183 테이블, SSOT) + `config/source-schema.json`
+  (2450 컬럼 인벤토리, 메타데이터만). 적재모드 규칙 정밀화:
+  **merge = PK 존재 AND temporal 커서 NOT NULL / 그 외 replica**
+  (Airbyte Postgres 소스는 nullable 커서를 incremental 에서 거부).
+- 4/4 소스 Bronze 적재·Trino 실데이터 조회 검증
+  (maxplatform/maxapex Postgres, pfms MSSQL, maxtdoracle Oracle).
+- dbt: staging 183 + intermediate(Silver) 183 + marts(Gold) 5개 샘플
+  (mes/qms, 의미상 적정 판단). `dbt debug`/`deps`/run 검증, Iceberg
+  TIMESTAMP(6) 리스크 해소.
 
-## FU-3. Airflow 커스텀 이미지 + DAG 전달 〔P1·기능·난이도 중〕
+### 1.6 FU-4b. pfms 대문자 식별자 — ✅ 해결 (정석)
 
-**배경**: 현 DAG 는 지연 import 스켈레톤. Cosmos/dbt-trino/providers-airbyte
-미포함, DAG 는 PVC 빈 상태(git-sync 비활성).
+근본 원인은 Trino 설정. Trino Iceberg REST 카탈로그에
+`iceberg.rest-catalog.case-insensitive-name-matching=true`(+`.cache-ttl`)
+적용(앞선 크래시는 잘못된 generic 속성명 때문). Trino 480→**481**(이미지
+태그 오버라이드). pfms 4테이블 stream.name 원본 유지 → 소스 매칭 + Trino
+case-insensitive 조회. **실데이터 검증 완료**. 커스텀 코드 불필요,
+**테이블 수 무관 무한 확장**(카탈로그 속성 1개).
 
-**범위**:
-- 커스텀 Airflow 이미지: `apache-airflow:3.2.0` + `astronomer-cosmos
-  [kubernetes]`·`dbt-trino`·`apache-airflow-providers-airbyte` + dbt 프로젝트
-  동봉 + 빌드시 `dbt parse` 로 `manifest.json` 베이크
-- 사설 레지스트리 또는 `k3d image import` 결정
-- DAG 전달: git-sync(원격 브랜치) 또는 PVC sync
-- `maxdl_factory.py` placeholder → 실제 AirbyteTrigger/Cosmos DbtTaskGroup 활성
+### 1.7 FU-5. 운영 시크릿 외부화 — ✅ 해결 〔보안〕
 
-**완료조건**: 변환 DAG 가 Airflow UI 정상 파싱, dbt 태스크 실행 가능.
-**의존성**: FU-4, 레지스트리 결정.
+Superset SECRET_KEY → SealedSecret(env 주입), admin 비번 → SealedSecret
+(배포시 --set), Airflow webserverSecretKey → SealedSecret. 차트 values
+평문 시크릿 0(grep 통과). SECRET_KEY 회전으로 Superset 메타DB 초기화
+(개발, 무가치 상태).
 
----
+### 1.8 FU-6. helmfile 통합 — ✅ 해결 (IaC)
 
-## FU-4. 실 Airbyte 커넥션 + dbt 모델 〔P1·기능·외부입력 필요〕
+`helmfile.yaml` — 9개 릴리스(버전 정확히 핀)·`needs` 의존순서·hooks
+(네임스페이스/SealedSecret/Polaris bootstrap/카탈로그·RBAC/Oracle 커넥터/
+Superset admin/OM NodePort)로 명령형 단계를 idempotent 스크립트 호출로
+코드화. 비파괴 검증: `helmfile build`/`list` 통과, 평문 시크릿 0.
+(→ 클린 클러스터 재구축 검증은 §2.1 잔여)
 
-**배경**: `config/ingestion-map.yaml` `tables: []`, dbt sources `tables: []`
-— mock 미생성 원칙으로 실 스키마 대기.
+### 1.9 FU-8. Superset 6.x 업그레이드 — ✅ 해결
 
-**범위**:
-- 4개 소스 DB 대상 테이블·커서컬럼·PK·적재모드 확정(MES/LIMS/QMS/SPC)
-- `ingestion-map.yaml` + `seeds/_source_ingestion_modes.csv` 채움
-- Airbyte 커넥션 생성(스트림별 sync mode) → Bronze 적재
-- dbt staging→intermediate(Silver)→marts(Gold, SPC 관제도-ready) 작성·테스트
-
-**완료조건**: 1개 소스 end-to-end(Airbyte→Bronze→dbt→Superset) 통과.
-**의존성**: **소스 테이블 스펙(도메인 제공)** — 핵심 블로커. FU-3.
-
----
-
-## FU-5. 운영 시크릿 외부화 — ✅ 해결 〔P1·보안〕
-
-**배경**: 개발 placeholder 가 chart values 평문 — Superset `SECRET_KEY`·
-admin/admin, Airflow `webserverSecretKey`.
-
-**범위**: 해당 값을 SealedSecret + 차트 `existingSecret`/`extraSecretEnv`
-참조로 전환, 강한 무작위 값 재생성.
-**해결**: Superset SECRET_KEY→SealedSecret(superset-secret, env 주입)·
-admin 비번→SealedSecret(superset-admin, 배포시 --set)·Airflow
-webserverSecretKey→SealedSecret(airflow-webserver-secret,
-webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
-신규 admin 비번 로그인 검증. SECRET_KEY 회전으로 Superset 메타DB
-초기화(개발, 무가치 상태).
+Superset 5.0.0(2단계 stale) → **6.1.0**(이미지 태그 오버라이드, 차트는
+5.0.0 까지만 발행). bootstrapScript 로 psycopg2-binary + trino[sqlalchemy]
+설치. Trino 데이터소스 등록 + test_connection 200, Gold 마트 대시보드
+렌더 검증.
 
 ---
 
-## FU-6. helmfile 통합 + 재현성 — ✅ 해결(IaC) 〔P2·운영〕
+## 2. ⚠️ 잔여 (제약 — 사용자 결정으로 보류)
 
-**배경**: 계획상 `helmfile.yaml` 이 SSOT 였으나 실제론 개별 `helm install`.
-부트스트랩 순서·의존성 미코드화.
+### 2.1 FU-6 클린 클러스터 helmfile 재구축 검증
 
-**범위**: 8단계 배포를 `helmfile.yaml` 로 선언(릴리스·NS·values·needs
-의존순서·hooks: SealedSecret apply, catalog-bootstrap, OM 시크릿, Oracle
-커넥터 등록). 클린 클러스터에서 `helmfile apply` 단일 재현 검증.
-**해결(IaC)**: `helmfile.yaml` 작성 — 9개 릴리스(버전 정확히 핀)·
-`needs` 의존순서·hooks(네임스페이스/SealedSecret/Polaris bootstrap·
-카탈로그·RBAC/Oracle 커넥터/Superset admin/OM NodePort)로 명령형 단계를
-기존 idempotent 스크립트 호출로 코드화. 비파괴 검증: `helmfile build`/
-`list` 통과, 평문 시크릿 0.
-**잔여 AC**: 완전 클린 클러스터 `helmfile apply` 재구축 검증은 라이브 스택
-파괴 방지를 위해 **폐기형 클러스터에서 수행 권장**(미수행).
+완전 클린 클러스터에서 `helmfile apply` 단일 재현 검증은 **미수행**.
+- **제약**: SealedSecret 가 현 클러스터 키에 바인딩 → 순진한 클린 재구축
+  시 전 SealedSecret 재봉인 필요(폐기형 클러스터에서 수행 권장).
+- **결정**: 사용자가 "이거 하지말자" → **보류**(IaC 코드 자체는 완료).
 
 ---
 
-## FU-7. 노출/관측/백업 〔P2·운영·난이도 중〕
+## 3. 📋 남은 · 보류 Task
 
-- **노출**: NodePort(30000번대) → Ingress/TLS(운영). Airbyte 노출 방식 결정.
+### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
+
+NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
+진행. 전제(사용자 제공 예정): ① ingress-nginx ② 확정 도메인
+③ 정식 SSL 인증서. 단일노드 self-signed/NodePort 우회가 아닌, 실 도메인 +
+정식 인증서 기반 ingress-nginx 구성.
+
+### 3.2 FU-7 관측 / 백업 — 미착수
+
 - **관측**: Prometheus/Grafana(ServiceMonitor 활성), 로그 수집.
-- **백업**: Polaris PG·Airbyte/Airflow/Superset/OM 메타DB·Iceberg 스냅샷
-  정책. SeaweedFS 는 maxplatform 공유 → 백업 책임 경계 명확화.
+- **백업**: Polaris PG · Airbyte/Airflow/Superset/OM 메타DB · Iceberg
+  스냅샷 정책. SeaweedFS 는 maxplatform 공유 → 백업 책임 경계 명확화.
+
+### 3.3 Gold 실 KPI 정의 — 도메인 입력 필요
+
+현재 Gold 마트는 5개 샘플(mes/qms). 실 MES/LIMS/QMS/SPC KPI(예: SPC
+관제도 Cp/Cpk, 수율, 불량률)는 **도메인 스펙 입력**이 있어야 정의 가능.
+
+### 3.4 (선택) `_airbyte_sync` 동시 sync 처리 개선
+
+현재 동일 Airbyte 커넥션 동시 sync 충돌은 `max_active_runs_per_dag=1`
+구조로 회피. 코드 레벨의 실행중 사전체크/큐잉은 선택 개선 사항.
+
+### 3.5 운영 주의 (기재 유지)
+
+- `created_at`-만 커서인 테이블은 원천 UPDATE 미포착 가능 → 추후
+  updated 컬럼 도입/주기 replica 검토.
+- 디스크 회복 시 CoreDNS `host.k3d.internal` 항목 소실 → 복구 필요
+  (`kubectl patch cm coredns`). RUNBOOK 참조.
+- maxtdoracle 는 소문자 stream.name 적재 — 일관성 위해 추후 원본명
+  재생성 가능(소스 빈 테이블, 우선순위 낮음).
 
 ---
 
-## 우선순위 요약
+## 4. 요약 표
 
 | 그룹 | 항목 |
 |---|---|
-| ✅ 완료 | FU-1, FU-2, FU-5, FU-6(IaC) |
-| 외부 입력/결정 필요 | FU-4(소스 스펙), FU-3(레지스트리) |
-| **독립 진행 완료** | ~~FU-2~~ ~~FU-5~~ ~~FU-6~~ ✅ (잔여: 클린 재구축 검증) |
-| 운영 단계 | FU-7 |
-
-독립 진행 항목(FU-2/5/6) **전부 완료**. 남은 항목: FU-3·FU-4(외부
-입력/레지스트리 결정 필요), FU-7(운영 단계), FU-6 클린 재구축 검증.
-
-
-## FU-4 진행 결과 (2026-05-17)
-
-- ✅ **maxplatform/maxapex (Postgres)**: 전체 테이블 Bronze 적재 성공, Trino
-  실데이터 조회 검증. 커서 규칙 정밀화 적용:
-  **merge = PK 존재 AND temporal 커서가 NOT NULL** / 그 외 replica
-  (Airbyte Postgres 소스는 nullable 커서를 incremental 에서 거부 → 전체 실패).
-- ✅ maxtdoracle (Oracle): 커넥션 검증 완료(소스 빈 테이블, replica 분류).
-- ⚠️ **pfms (MSSQL) 한계 (후속 과제 FU-4b)**: 소스 테이블명이 대문자
-  (`PBATPRCDAT` 등). Airbyte S3-Data-Lake 목적지는 connection `aliasName`
-  무시하고 `stream.name` 을 Iceberg 테이블명으로 사용. Trino Iceberg 커넥터는
-  소문자 식별자만 load 가능(case-insensitive 옵션 없음). → 소스 매칭(대문자
-  필요)과 Trino 조회(소문자 필요)가 양립 불가. 4개 테이블.
-  옵션: (a) sync 후 Polaris renameTable 자동화(merge엔 부적합/replica 매 sync
-  재생성), (b) 별도 케이스 변환/뷰 계층, (c) Spark 등 case-sensitive 엔진으로
-  해당 네임스페이스 조회. 결정 필요.
-- 운영 주의: `created_at`-만 커서인 테이블은 원천 UPDATE 미포착 가능 → 추후
-  updated 컬럼 도입/주기 replica 검토(기존 기재 유지).
-- 인시던트 학습: 디스크 회복 시 CoreDNS `host.k3d.internal` 항목 소실 →
-  복구 필요(`kubectl patch cm coredns`). RUNBOOK 참조.
-
-
-## FU-4b 해결 + 버전 감사 (2026-05-17)
-
-- ✅ **FU-4b 해결(정석)**: 근본 원인은 커스텀 인제스션 부재가 아니라 **Trino
-  설정**. Trino Iceberg REST 카탈로그는 `iceberg.rest-catalog.
-  case-insensitive-name-matching=true` 지원(+`.cache-ttl`). 앞서 크래시는
-  잘못된 속성명(`iceberg.case-insensitive-name-matching`, generic) 때문.
-  조치: Trino 480→**481**(이미지 태그 오버라이드; 차트 appVersion 은 480 까지만
-  발행) + 3 Iceberg 카탈로그에 위 속성 적용. pfms(MSSQL 대문자) stream.name
-  원본 유지 → 소스 매칭, Trino case-insensitive 조회. **pfms 4테이블 실데이터
-  Trino 검증 완료**(pbatprcdat=12, pbatstsdat=49, poprbatdat=60). 커스텀 코드
-  불필요, **테이블 수 무관 무한 확장**(카탈로그 속성 1개).
-  → FU-4 = maxplatform/maxapex/pfms/maxtdoracle **4/4 완전체**.
-- 정리(선택): maxtdoracle 는 소문자 stream.name 으로 적재돼 있음 — 일관성 위해
-  추후 원본명으로 재생성 가능(소스 빈 테이블이라 우선순위 낮음).
-
-### 전 컴포넌트 버전 신규 감사 (2026-05-17)
-
-| 컴포넌트 | 배포 | 최신 | 조치 |
-|---|---|---|---|
-| Trino | 480→**481** | 481 | ✅ 완료 |
-| **Superset** | **5.0.0** | **6.1.0** | ⚠️ **stale — 신차트로 6.x 업그레이드(FU-8 신규)** |
-| Airflow | 3.2.0 | 3.2.1 | 패치 권장 |
-| Airbyte 플랫폼/커넥터 | 2.1.0 / s3-data-lake 0.3.48 | 동일 | ✅ 최신(연결자는 플랫폼과 독립 버전) |
-| Polaris / OpenMetadata / dbt / sealed-secrets | — | — | ✅ 현행 |
-| k3s | 1.31.5 | 1.34.7 | 개발 무방, 선택적 |
-
-## FU-8 (신규). Superset 6.x 업그레이드 〔P1·stale 해소〕
-
-Superset 5.0.0 은 최신(6.1.0) 대비 메이저 2단계 뒤. 신 Helm 차트로 6.x
-업그레이드. SECRET_KEY 회전 시 메타DB 재초기화 주의(FU-5 학습).
-
-
-## FU-7 보류 결정 (사용자, 2026-05-18)
-
-FU-7(노출/관측/백업) 중 **노출(Ingress/TLS)** 은 사용자가 추후 직접 요청 시 진행.
-전제(사용자 제공 예정): ① ingress-nginx ② 확정 도메인 ③ 정식 SSL 인증서.
-→ 단일노드 self-signed/NodePort 우회가 아닌, 실 도메인+정식 인증서 기반
-ingress-nginx 구성으로 진행. 그 외 관측(Prometheus/Grafana)·백업은 별도.
+| ✅ 해결 완료 | 부트스트랩 0~8, FU-1, FU-2, FU-3(동시성 상한 포함), FU-4, FU-4b, FU-5, FU-6(IaC), FU-8 |
+| ⚠️ 잔여(보류) | FU-6 클린 클러스터 재구축 검증(SealedSecret 클러스터 키 결합 — 사용자 보류) |
+| 📋 남은·보류 | FU-7 노출(사용자 보류, nginx+도메인+SSL 대기) · FU-7 관측/백업 · Gold 실 KPI(도메인 입력) · `_airbyte_sync` 개선(선택) |
