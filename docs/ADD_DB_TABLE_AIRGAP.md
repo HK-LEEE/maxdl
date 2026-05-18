@@ -127,7 +127,9 @@ SRC_MYNEWDB_TYPE='postgres'          # postgres | mssql | oracle
   mynewdb:
     connector: source-postgres        # source-postgres | source-mssql | source-oracle
     secret: src-db-mynewdb            # = secrets-spec 의 name
-    replicationMethod: standard       # CDC 미사용(컬럼 커서)
+    replicationMethod: standard       # 기록용 필드(스크립트 미참조). 값 변경해도
+                                      # 동작 무변경 — CDC 는 이 필드로 안 켜짐
+
     bronzeNamespace: mynewdb          # Bronze 네임스페이스(=소스명 권장)
     tables:
       - { name: "public.orders", mode: merge, cursorField: "updated_at", primaryKey: ["id"] }
