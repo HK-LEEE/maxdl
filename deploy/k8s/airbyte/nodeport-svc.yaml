@@ -1,0 +1,23 @@
+# =============================================================================
+# Airbyte 외부 노출 NodePort (정책: 30000번대 — globals.yaml airbyte: 30081)
+# - Airbyte V2 2.1.0 은 별도 webapp 차트 서비스가 없고 server-svc 가 UI/API
+#   를 8001 로 동시 제공(ClusterIP) → 차트에 nodePort 필드 부재.
+# - OpenMetadata 와 동일 패턴으로 별도 Service 로 30081 고정 노출.
+# - 셀렉터는 airbyte server 파드 라벨에 맞춘다.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: airbyte-nodeport
+  namespace: maxdl-ingest
+  labels: { app.kubernetes.io/part-of: maxdl }
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: server
+    app.kubernetes.io/instance: airbyte
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+      nodePort: 30081
