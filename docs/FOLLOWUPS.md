@@ -184,3 +184,11 @@ webserverSecretKeySecretName). 차트 values 평문 시크릿 0(grep 통과),
 
 Superset 5.0.0 은 최신(6.1.0) 대비 메이저 2단계 뒤. 신 Helm 차트로 6.x
 업그레이드. SECRET_KEY 회전 시 메타DB 재초기화 주의(FU-5 학습).
+
+
+## FU-7 보류 결정 (사용자, 2026-05-18)
+
+FU-7(노출/관측/백업) 중 **노출(Ingress/TLS)** 은 사용자가 추후 직접 요청 시 진행.
+전제(사용자 제공 예정): ① ingress-nginx ② 확정 도메인 ③ 정식 SSL 인증서.
+→ 단일노드 self-signed/NodePort 우회가 아닌, 실 도메인+정식 인증서 기반
+ingress-nginx 구성으로 진행. 그 외 관측(Prometheus/Grafana)·백업은 별도.
