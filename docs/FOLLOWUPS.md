@@ -172,9 +172,21 @@ Trino 유저명" 기준으로 처리하므로 인증방식과 무관.
   동작 그대로)**, TRINO_USER=svc-dbt, extraEnvFrom trino-svc-dbt 배선.
   helmfile trino presync 훅. `helmfile template` exit 0. **라이브 무변경**
   (시크릿만 생성, 재배포·인증 미적용 — 컷오버 때 TRINO_METHOD=ldap 플립).
-- **남은 단계**: 3단계 Superset 임퍼소네이션 · 4단계 Ranger(정책 GUI·
-  컬럼마스킹·감사) · 5단계 OM 활성화(인제스션 커넥터) + OM↔Ranger 분류
-  연계. 자원 실측(단일노드 수용성) 선행 필요. 폐쇄망 이동 *전* 구축·검증 권장.
+- **3단계 완료(코드/자격 준비, 비파괴)**: svc-superset 신뢰 principal —
+  gen-trino-password-db 에 포함(password-db = svc-dbt+svc-superset),
+  `trino-svc-superset`(seal-from-env, SUPERSET_TRINO_PASSWORD, maxdl-bi)
+  생성·봉인. Superset Trino 자산(`maxdl-trino-gold.yaml`) 목표상태로 갱신:
+  `sqlalchemy_uri` svc-superset + `impersonate_user: true`(비번 평문 미커밋,
+  컷오버 import 시 주입). **라이브 무변경**(Superset 재배포·재import 안 함,
+  대시보드 무영향).
+- **정직한 의존성**: 임퍼소네이션은 그 자체로 "유저명 전달"일 뿐 —
+  **4단계 Ranger 가 그 유저로 집행해야 의미**. 또한 4단계(Ranger)+5단계
+  (OM 활성화) 착수 전 **단일노드 자원 수용성 실측이 게이트**(2nd 클러스터도
+  미기동한 노드 — Ranger admin+DB+감사 / OM 8pod 동시 수용 불확실).
+- **남은 단계**: 4단계 Ranger(정책 GUI·컬럼마스킹·감사, Trino 임퍼소네이션
+  허용 정책 포함) · 5단계 OM 활성화 + OM↔Ranger 분류 연계 · 컷오버
+  (Trino 인증 ON + TRINO_METHOD=ldap + Superset import 동시 1회).
+  폐쇄망 이동 *전* 구축·검증 권장.
 - **트레이드오프(정직)**: 유저 추가/삭제 수동(중앙 디렉토리/SSO 없음) —
   소수 유저 환경 수용. 대규모면 추후 SSO 재검토 여지.
 

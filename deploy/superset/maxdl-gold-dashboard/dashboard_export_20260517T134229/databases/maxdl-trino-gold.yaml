@@ -1,5 +1,9 @@
+# FU-9/3단계 목표 상태: svc-superset 인증 + 로그인 실유저 임퍼소네이션
+# (Ranger 가 그 유저로 정책·컬럼마스킹 집행). 비번 평문 미커밋 — 컷오버
+# import 시 trino-svc-superset(SUPERSET_TRINO_PASSWORD)로 주입. 인증 OFF 인
+# 현재는 미적용(라이브 Superset 무변경) — 4단계+컷오버와 함께 import.
 database_name: maxdl-trino-gold
-sqlalchemy_uri: "trino://dbt@trino.maxdl-query.svc.cluster.local:8080/iceberg_gold"
+sqlalchemy_uri: "trino://svc-superset@trino.maxdl-query.svc.cluster.local:8080/iceberg_gold"
 cache_timeout: null
 expose_in_sqllab: true
 allow_run_async: false
@@ -12,7 +16,7 @@ extra:
   engine_params: {}
   metadata_cache_timeout: {}
   schemas_allowed_for_file_upload: []
-impersonate_user: false
+impersonate_user: true
 configuration_method: sqlalchemy_form
 uuid: bbe3d79b-0784-473c-877e-98179ece74ff
 version: 1.0.0

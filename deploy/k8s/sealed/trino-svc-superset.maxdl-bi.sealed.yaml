@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: trino-svc-superset
+  namespace: maxdl-bi
+spec:
+  encryptedData:
+    SUPERSET_TRINO_PASSWORD: AgBjq9Cw3AxLg5LKrI8N2iOceXCsCWzAe/ar1/p8F4ZYYC6y7QZm/91P7OU/jQn3PRILuKtUrkcR+3MzJ9aOq+E/Vte2kVmlujpxWBjL5NxPFbMeLU+t80rRpyoIPxMHJ1irLRin/a7PwL3AdHT6c2MU99cKDTaxMIegZ6uCzVlZpH4/7lymNubxIt4HddTjCY/Qmsfdmb/YdLJ8cGPLPFUo+x4Bn0qznH8vZPXSbFd7BDMCmcr4d7RGj+zcjnrQhhJzyvBEkpFVUQbWzNzZOCZIu1t3voUzpxYRcOUfJ7/esbbJwGk7jNYo9+WKfyqq+QLMdNIEfxKJt1rSwpUnyEK2FVfSO2OxFgp5U2/GeAZG+FViPmbLPUQo1mPF++Os+FDLGnmbhXd9RHGvmTax3+K3KcCbEcdclmQZ7XjeNtANI/MpNMgJ4Bj5cGYLpHvq0B7FvcoZXABAOXHUKLh0AycLuAQKj8JBKqb9RQ42jvtxa8sC1qCiAc7oFkbsuaXWadFF2V8TcGnLFJVLCNfcENFwePTqT3nanUB7jqlCkZ6GXEJNLzwbBfexoIY29A+nfo0F/6ToktRcAiFvSThmdsANrUUTAP6FHvfSM7L80rqVEmCEnorF/v8iahMwt4CMKGpS7QF9GyssXTWJo2xP6XKLEbXq8K+uHe9BIlKUDHVjliYGSx32eY9etnHrTXRKq0LRH8mmRvWfcsBt3xLZbyebZqBxhQ1Wn7HINM4Gw/xBoA==
+  template:
+    metadata:
+      name: trino-svc-superset
+      namespace: maxdl-bi
+    type: Opaque
