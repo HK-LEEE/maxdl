@@ -61,6 +61,14 @@ Polaris principal `svc-trino`(bronze RO + silver/gold RW)·`svc-airbyte`
 - dbt: staging 183 + intermediate(Silver) 183 + marts(Gold) 5개 샘플
   (mes/qms, 의미상 적정 판단). `dbt debug`/`deps`/run 검증, Iceberg
   TIMESTAMP(6) 리스크 해소.
+- **커넥션 카탈로그 IaC 화 완료**: `scripts/airbyte-apply-ingestion-map.sh`
+  (멱등) — ingestion-map.yaml 을 단일 권위로 4커넥션 syncCatalog 수렴
+  + Airflow Variable `airbyte_conn_<src>` 세팅, helmfile airbyte hook 배선.
+  드리프트 실측·교정: maxapex 뷰 6개(yaml 비대상) 해제, maxtdoracle
+  PRODUCTION_LOG 등록 → 4/4 라이브 = yaml 정확 일치, 재실행 변경 0.
+- **잔여(정직 기재)**: 소스/목적지 *프로비저닝 자체*(자격·커넥터별 스펙)는
+  여전히 문서-수동(`docs/ADD_NEW_DATABASE.md` 1~3.1). 본 applier 는
+  "커넥션 카탈로그 선택"만 IaC 화 — 소스/목적지 존재 전제, 없으면 명시 실패.
 
 ### 1.6 FU-4b. pfms 대문자 식별자 — ✅ 해결 (정석)
 

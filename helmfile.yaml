@@ -113,7 +113,9 @@ releases:
       - events: [postsync]
         showlogs: true
         command: sh
-        args: ["-c", "kubectl -n maxdl-ingest rollout status deploy/airbyte-server --timeout=600s && kubectl apply -f deploy/k8s/airbyte/nodeport-svc.yaml && bash deploy/k8s/airbyte/register-oracle-connector.sh"]
+        # 주: applier 는 helmfile 러너에서 nodeport(30081) 로 호출
+        #   (단일노드 가정 — 원격/멀티노드 러너는 --api 조정 또는 in-cluster Job).
+        args: ["-c", "kubectl -n maxdl-ingest rollout status deploy/airbyte-server --timeout=600s && kubectl apply -f deploy/k8s/airbyte/nodeport-svc.yaml && bash deploy/k8s/airbyte/register-oracle-connector.sh && bash scripts/airbyte-apply-ingestion-map.sh --api http://localhost:30081 --set-airflow-vars"]
 
   # --- 6) Airflow (KubernetesExecutor) ---
   - name: airflow
