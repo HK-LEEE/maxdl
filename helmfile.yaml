@@ -44,8 +44,11 @@ releases:
     hooks:
       - events: [presync]
         showlogs: true
-        command: kubectl
-        args: ["apply", "-f", "deploy/k8s/namespaces.yaml"]
+        command: sh
+        # 네임스페이스 + 영속 StorageClass(Retain) 선적용. SC 는 비-default
+        # 매니페스트라 기존 클러스터에 무해(아무도 참조 안 함). 실 k3s
+        # default 승격·local-path-config 경로는 AIRGAP_RUNBOOK §2 절차.
+        args: ["-c", "kubectl apply -f deploy/k8s/namespaces.yaml && kubectl apply -f deploy/k8s/storageclass-retain.yaml"]
       - events: [postsync]
         showlogs: true
         command: sh

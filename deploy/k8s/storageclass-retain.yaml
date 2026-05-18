@@ -1,0 +1,27 @@
+# =============================================================================
+# maxdl 영속 StorageClass (실 k3s 정석) — FU-6/영속성
+# -----------------------------------------------------------------------------
+# 메타DB PVC(Polaris/Airflow/Superset/Airbyte)를 호스트 영속 디렉토리에
+# 고정. k3s 내장 local-path 의 default SC(reclaimPolicy=Delete)는 PVC 삭제
+# 시 데이터 폴더째 삭제 → 영속 부적합. 본 SC 는 reclaimPolicy=Retain.
+#
+# 전제(AIRGAP_RUNBOOK §2 — 클러스터 생성 시):
+#   1) 전용 영속 디스크를 호스트 /data/maxdl-pv 에 마운트(백업 대상)
+#   2) kube-system local-path-config 의 paths 를 /data/maxdl-pv 로 변경
+#   3) 본 SC 적용 + default 로 지정(내장 local-path 의 default 해제)
+#      → 번들 차트 values 무수정으로 전 PVC 가 이 SC(Retain·영속) 사용
+#
+# 주의: Retain → PVC 삭제 시 PV·데이터 폴더 잔존(고의 — 영속). 정리는
+#   수동. local-path 는 노드 종속(단일노드 폐쇄망 가정; 멀티노드면 CSI).
+# 본 매니페스트는 비-default(두 default 충돌 회피). default 승격은 런북
+#   절차(내장 local-path default 해제 후)에서 수행.
+# =============================================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: maxdl-retain
+  labels: { app.kubernetes.io/part-of: maxdl }
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
