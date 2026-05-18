@@ -268,6 +268,16 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
   All checks passed + "SSL validation disabled" 경고 소멸 = 검증 활성·
   통과(cert SAN=trino.maxdl-query.svc.cluster.local=TRINO_HOST).
 - **잔여(정직)**: 폐쇄망 이동 시 이 컷오버 구성 동반(TLS·시크릿 포함)
+### 3.0f 단일 통합 절차서 SETUP.md — ✅ 완료
+
+`docs/SETUP.md` — 사용자 요청: OS Level → 클러스터·이미지 → 시크릿·
+배포 → 운영 중 테이블/DB 추가·적용을 **다른 문서 참조 없이 자족
+단일 문서**로. INSTALL_UBUNTU+INSTALL_AIRGAP+ADD_DB_TABLE_AIRGAP 의
+실제 명령을 1·2단계 온라인/폐쇄망 경로 + 3·4단계 공통으로 통합
+인라인. 509줄(사용자가 500줄 제한 해제). 절차상 타 문서 의존 0
+(FOLLOWUPS 는 상태 SSOT 스코핑 언급만). 기존 3개 문서는 유지(세분
+레퍼런스), SETUP.md 가 단일 진입점.
+
 ### 3.0c 설치 문서 (Ubuntu 베어 OS) — ✅ 완료
 
 `docs/INSTALL_UBUNTU.md` — Ubuntu 24.04 베어 머신에서 Docker→CLI도구
