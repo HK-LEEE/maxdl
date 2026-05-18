@@ -1,16 +1,17 @@
 # =============================================================================
-# Apache Airflow Helm values — maxdl (차트 1.21.0 / app 3.2.0)
+# Apache Airflow Helm values — maxdl (차트 1.21.0 / app 3.2.x)
 # - 오케스트레이션: Airbyte 동기화 → dbt(Cosmos) → DQ (계획서 §6).
 # - executor=KubernetesExecutor(스파이키 ELT 에 적합, 유휴 워커 없음).
 # - 단일 노드 개발: 번들 postgresql 사용, redis 불필요(K8s executor).
-# - DAG 전달: 우선 PVC(persistence). Cosmos/dbt 동봉 커스텀 이미지는 후속
-#   (레지스트리 결정 필요) — 본 단계는 플랫폼 가동 + DAG IaC 작성까지.
+# - **DAG/dbt 전달 = SeaweedFS 아티팩트 패턴**: 이미지는 pip 패키지층만(안정).
+#   각 컴포넌트 initContainer 가 s3artifact.py 로 버전 tar 를 내려받아
+#   emptyDir(/opt/airflow/artifact)로 전개 → 새 모델/테이블 시 이미지 재빌드
+#   불필요(아티팩트 재발행 + 롤아웃만). 버전은 env(MAXDL_ARTIFACT_VERSION).
 # - 외부 노출: api-server NodePort 30082(정책: 30000번대).
 # =============================================================================
 executor: "KubernetesExecutor"
 
-# FU-3: Cosmos+dbt-trino+providers-airbyte+dbt프로젝트+DAG 동봉 커스텀 이미지
-# (k3d image import 로 노드에 적재 → pullPolicy Never)
+# pip 패키지층 + s3artifact.py 만 담긴 안정 이미지(거의 불변)
 images:
   airflow:
     repository: maxdl/airflow
@@ -35,37 +36,87 @@ env:
     value: "1"
   - name: AIRFLOW__CORE__PARALLELISM
     value: "8"
+  # 아티팩트에서 온 dbt/DAG 경로(이미지 ENV 와 동일, 명시 보강)
+  - name: AIRFLOW__CORE__DAGS_FOLDER
+    value: "/opt/airflow/artifact/dags"
+  - name: DBT_PROJECT_DIR
+    value: "/opt/airflow/artifact/dbt/maxdl_transform"
+  - name: DBT_MANIFEST
+    value: "/opt/airflow/artifact/dbt/maxdl_transform/target/manifest.json"
 # Airbyte API 자격: 차트 env 스키마는 valueFrom 미허용 → extraEnvFrom(secretRef)
-# 사용. scheduled ingest run 의 airbyte_sync 성공으로 KE pod 전파 입증됨.
 extraEnvFrom: |
   - secretRef:
       name: airbyte-api
 
-# 동시성 상한(단일노드 Trino 과부하/OOM 방지) + DAG당 동시 run 1개
-# (max_active_runs_per_dag=1 → unpause 자동 scheduled run 과 manual 트리거가
-#  동시 실행되어 같은 Airbyte 커넥션에 충돌하던 문제도 구조적으로 차단)
 config:
   core:
     load_examples: 'False'
 
 # 웹/메타 보안키: values 평문 금지(FU-5). SealedSecret 참조.
-# (airflow-webserver-secret 의 key 'webserver-secret-key')
 webserverSecretKeySecretName: airflow-webserver-secret
 
-# 번들 메타DB 사용, redis 불필요
 postgresql:
   enabled: true
 redis:
   enabled: false
 
-# DAG 은 커스텀 이미지에 동봉(/opt/airflow/dags) → persistence/git-sync 불필요
+# 아티팩트 패턴 → 차트 DAG 전달 메커니즘 모두 비활성
 dags:
   persistence:
     enabled: false
   gitSync:
     enabled: false
 
-# API 서버(Airflow 3) 외부 노출 + 리소스 절제
+# --- 아티팩트 fetch initContainer / 공유 volume (앵커로 4컴포넌트 공유) -----
+# initContainer 는 자유형 podspec → seaweedfs-s3 를 secretKeyRef 로 매핑
+# (차트 최상위 env 는 valueFrom 미지원이라 여기서 처리). 메인 컨테이너는
+# S3 자격 불요 — 전개된 /opt/airflow/artifact 만 읽음.
+# MAXDL_ARTIFACT_VERSION: 기본 latest(publish 가 별칭 갱신), 운영은
+# helm --set 으로 git SHA 핀(결정적·롤백 가능).
+scheduler:
+  resources:
+    requests: { cpu: "150m", memory: "512Mi" }
+  extraVolumes: &artVols
+    - name: artifact
+      emptyDir: {}
+  extraVolumeMounts: &artMounts
+    - name: artifact
+      mountPath: /opt/airflow/artifact
+  extraInitContainers: &artInit
+    - name: fetch-artifact
+      image: maxdl/airflow:fu3
+      imagePullPolicy: Never
+      command: ["bash", "-c"]
+      args:
+        - >-
+          python3 /opt/airflow/s3artifact.py get
+          "$ARTIFACT_S3_PREFIX/maxdl-airflow-$MAXDL_ARTIFACT_VERSION.tgz"
+          /tmp/a.tgz &&
+          mkdir -p /opt/airflow/artifact &&
+          tar xzf /tmp/a.tgz -C /opt/airflow/artifact &&
+          ls /opt/airflow/artifact
+      env:
+        - name: ARTIFACT_S3_PREFIX
+          value: "airflow-artifacts"
+        - name: MAXDL_ARTIFACT_VERSION
+          value: "latest"
+        - name: ARTIFACT_S3_ENDPOINT
+          valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: endpoint } }
+        - name: ARTIFACT_S3_REGION
+          valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: region } }
+        - name: ARTIFACT_S3_BUCKET
+          valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: warehouseBucket } }
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: accessKey } }
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
+      volumeMounts: *artMounts
+
+dagProcessor:
+  extraVolumes: *artVols
+  extraVolumeMounts: *artMounts
+  extraInitContainers: *artInit
+
 apiServer:
   resources:
     requests: { cpu: "150m", memory: "512Mi" }
@@ -75,11 +126,13 @@ apiServer:
       - name: api-server
         port: 8080
         nodePort: 30082
+  extraVolumes: *artVols
+  extraVolumeMounts: *artMounts
+  extraInitContainers: *artInit
 
-# 단일 노드 리소스 절제
-scheduler:
-  resources:
-    requests: { cpu: "150m", memory: "512Mi" }
 workers:
   resources:
     requests: { cpu: "100m", memory: "256Mi" }
+  extraVolumes: *artVols
+  extraVolumeMounts: *artMounts
+  extraInitContainers: *artInit
