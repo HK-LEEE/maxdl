@@ -82,10 +82,15 @@ printf '%s\n' "${IMAGES[@]}"
 
 if [[ "$DRY" == 1 ]]; then echo "--dry-run: pull/save 생략"; exit 0; fi
 
-# pull (실패 즉시 중단 — 불완전 번들 금지)
+# 로컬에 있으면 pull 생략(커스텀/로컬빌드 이미지 = maxdl/airflow 등은 레지스트리
+# 에 없음 — air-gap 의 핵심). 없을 때만 pull. 실패 즉시 중단(불완전 번들 금지).
 for img in "${IMAGES[@]}"; do
-  echo "pull: $img"
-  docker pull -q "$img" >/dev/null || { echo "ERROR: pull 실패: $img" >&2; exit 1; }
+  if docker image inspect "$img" >/dev/null 2>&1; then
+    echo "local: $img"
+  else
+    echo "pull: $img"
+    docker pull -q "$img" >/dev/null || { echo "ERROR: pull 실패: $img" >&2; exit 1; }
+  fi
 done
 
 mkdir -p "$(dirname "$OUT")"

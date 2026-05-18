@@ -13,6 +13,9 @@ deploy/secrets/secrets.env
 deploy/secrets/*.env
 !deploy/secrets/secrets.env.example
 
+# airgap 번들 산출물 (대용량 — 커밋 금지, 전송용 로컬 산출)
+dist/
+
 # dbt
 dbt/**/target/
 dbt/**/dbt_packages/
