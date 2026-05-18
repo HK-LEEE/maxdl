@@ -18,8 +18,10 @@ dist/
 
 # dbt
 dbt/**/target/
-dbt/**/dbt_packages/
 dbt/**/logs/
+# dbt_packages 는 vendoring(폐쇄망 자족 — package-lock.yml 핀과 함께
+# 커밋). dbt deps(허브 접근) 없이 dbt parse/run 가능 → 온라인 호스트
+# 불요. 갱신 시에만 ARTIFACT_REFRESH_DEPS=1 로 온라인 재설치 후 재커밋.
 
 # 파이썬/도구 산출물
 __pycache__/
