@@ -278,3 +278,60 @@ kubectl exec -n maxdl-orchestrate deploy/airflow-scheduler -- \
 - [ ] 4단계: staging/intermediate 모델 생성·`dbt run` 통과
 - [ ] 5단계: `SOURCES` 추가 + `airbyte_conn_<name>` Variable 주입 + 아티팩트 재발행(이미지 재빌드 아님)
 - [ ] 보안: **평문 시크릿 미커밋**, **운영 SeaweedFS 버킷(`maxdl-warehouse` 외) 미침범** 재확인
+
+---
+
+## 8. 자동 반영되나? + 실행 명령 요약
+
+**아니오 — 파일만 고친다고 자동 반영되지 않는다.** SSOT 파일 편집과
+(신규 DB 의) 시크릿 봉인은 **수동**이고, 그 뒤 스크립트(또는
+`helmfile sync` 훅)가 나머지를 연쇄한다.
+
+### 8.1 무엇이 수동 / 무엇이 자동인가
+
+| 단계 | 수동/자동 | 비고 |
+|---|---|---|
+| `ingestion-map.yaml` / `source-schema.json` / (신규DB) `secrets.env`·`secrets-spec.yaml`·`SOURCES` 편집 | **수동** | SSOT 사람이 작성 |
+| (신규DB) SealedSecret 봉인 | **수동** | `seal-from-env.sh` 먼저 실행해야 훅이 apply 함 |
+| stg_/int_/sources.yml/seed 생성 | 자동 | `dbt-gen-models.sh`(helmfile airflow presync) |
+| dbt 아티팩트 재발행(무접속) | 자동 | `airflow-artifact-publish.sh`(동 presync) |
+| Airbyte 소스/목적지/커넥션 + Airflow Variable | 자동 | `airbyte-apply-ingestion-map.sh`(airbyte postsync) |
+| SealedSecret 클러스터 적용 | 자동 | `kubectl apply -f deploy/k8s/sealed/`(sealed postsync) |
+| Airflow pod 가 새 아티팩트 refetch | **수동 트리거** | 훅이 pod 재생성 안 함 → `rollout restart` 필요 |
+| Bronze 적재(동기화) | **수동 트리거** | DAG 트리거 또는 Airbyte 동기화 1회 |
+
+> `source-schema.json` 비면 `dbt-gen-models.sh` 가 **즉시 실패**
+> (fallback 없음). 신규 DB 시크릿 sealed yaml 이 없으면 sealed 훅이
+> 적용할 게 없음 → 봉인을 `helmfile sync` **전에** 수행.
+
+### 8.2 실행 명령 (편집 끝낸 뒤)
+
+**A. 기존 DB 에 테이블만 추가** (시크릿 불요):
+```bash
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; export PATH="/usr/local/bin:$PATH"
+scripts/dbt-gen-models.sh --check          # 생성물 드리프트 0 확인(편집 정합성)
+helmfile -f helmfile.yaml sync             # dbt-gen→아티팩트 재발행→Airbyte 수렴(훅 연쇄)
+kubectl -n maxdl-orchestrate rollout restart deploy/airflow-scheduler deploy/airflow-dag-processor
+# 검증: 동기화 1회 후
+kubectl exec -n maxdl-query deploy/trino-coordinator -- \
+  trino --execute "SELECT count(*) FROM iceberg_bronze.<src>.<table>"
+```
+
+**B. 신규 DB 추가** (위 + 시크릿 봉인 선행):
+```bash
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; export PATH="/usr/local/bin:$PATH"
+# 1) 신규 시크릿만 폐쇄망 클러스터 키로 봉인·적용 (helmfile sync 전 필수)
+kubeseal --fetch-cert --controller-namespace maxdl-system \
+  --controller-name sealed-secrets-controller > /tmp/pub.pem
+scripts/seal-from-env.sh --cert /tmp/pub.pem --only src-db-<name> --apply
+shred -u /tmp/pub.pem
+# 2) 이하 A 와 동일
+scripts/dbt-gen-models.sh --check
+helmfile -f helmfile.yaml sync
+kubectl -n maxdl-orchestrate rollout restart deploy/airflow-scheduler deploy/airflow-dag-processor
+```
+
+> 스크립트를 개별 실행해도 된다(훅과 동일): `dbt-gen-models.sh` →
+> `airflow-artifact-publish.sh` → `airbyte-apply-ingestion-map.sh --api
+> http://localhost:30081 --set-airflow-vars` → `rollout restart`.
+> 폐쇄망 무접속 동작·근거는 [`ADD_DB_TABLE_AIRGAP.md`](./ADD_DB_TABLE_AIRGAP.md) §0.
