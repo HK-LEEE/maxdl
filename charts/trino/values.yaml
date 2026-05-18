@@ -11,13 +11,24 @@ image:
 # =============================================================================
 
 # 단일 노드 개발: 코디네이터1 + 워커1, 리소스 절제
+# server.config.authenticationType = FU-9 1단계(코드-only, 컷오버 활성)
 server:
   workers: 1
+  config:
+    authenticationType: "password"
 
 coordinator:
   resources:
     requests: { cpu: "500m", memory: "2Gi" }
     limits:   { memory: "4Gi" }
+  # FU-9/4단계: 그룹 provider(file). ConfigMap 키 '/' 불가 → 평탄.
+  # 코드-only(컷오버 활성). groups.txt = 거버넌스 운영 편집 표면.
+  additionalConfigFiles:
+    group-provider.properties: |-
+      group-provider.name=file
+      file.group-file=/etc/trino/groups.txt
+    groups.txt: |-
+      analysts:admin
 worker:
   resources:
     requests: { cpu: "500m", memory: "2Gi" }
@@ -48,17 +59,62 @@ env:
 # - password db(htpasswd 포맷 Secret 'trino-password-db')는 컷오버 시
 #   secrets.env(SVC_DBT_PASSWORD 등 유저별)로 생성(다음 dbt-path 단계 배선).
 # - 트레이드오프: 유저 추가/삭제 수동(중앙 디렉토리/SSO 없음) — 소수 유저 수용.
+#   (server.config.authenticationType 는 상단 server 블록에 통합)
 # =============================================================================
-server:
-  config:
-    authenticationType: "password"
-
 auth:
   # 컷오버 시 생성되는 htpasswd 포맷 Secret(svc-dbt + 사람 유저) 참조
   passwordAuthSecret: "trino-password-db"
 
 additionalConfigProperties:
   - http-server.authentication.allow-insecure-over-http=true
+
+# =============================================================================
+# 접근 제어 (FU-9/4단계: 코드화만 — 라이브 미적용. 컷오버와 동시 활성).
+# Trino 내장 file-based(B안). **테이블 열거 금지 — 정규식/그룹/계층 패턴**
+# 으로 1000+ 테이블도 규칙 한 줌으로 관리. 그룹이 거버넌스 단위(group
+# provider=file). 정책=git(JSON, SSOT). first-match·미매칭=거부.
+# - svc-dbt: 파이프라인 엔진 → 전 계층 R/W (user 정규식)
+# - svc-superset: 임퍼소네이션 허용(실유저로 위임), 직접 데이터 접근 없음
+# - analysts 그룹: Gold/Silver read-only + PII 컬럼명 패턴 마스킹(샘플)
+# - 그 외: 거부(기본)
+# 그룹 매핑(deploy/k8s/trino/groups.txt)·신원 추가가 거버넌스 운영 표면.
+# =============================================================================
+accessControl:
+  type: configmap
+  refreshPeriod: 30s
+  configFile: "rules.json"
+  rules:
+    rules.json: |-
+      {
+        "catalogs": [
+          { "user": "svc-dbt", "catalog": "iceberg_(bronze|silver|gold)", "allow": "all" },
+          { "group": "analysts", "catalog": "iceberg_(silver|gold)", "allow": "read-only" },
+          { "user": "svc-superset", "catalog": "iceberg_(silver|gold)", "allow": "read-only" }
+        ],
+        "schemas": [
+          { "user": "svc-dbt", "schema": ".*", "owner": true },
+          { "group": "analysts", "schema": ".*", "owner": false }
+        ],
+        "tables": [
+          { "user": "svc-dbt", "privileges": ["SELECT","INSERT","DELETE","UPDATE","OWNERSHIP"] },
+          {
+            "group": "analysts", "catalog": "iceberg_(silver|gold)",
+            "schema": ".*", "table": ".*", "privileges": ["SELECT"],
+            "columns": [
+              { "name": "(?i).*(ssn|rrn|resident_no|email|phone|mobile|passwd|password).*",
+                "mask": "'***-MASKED-***'" }
+            ]
+          }
+        ],
+        "impersonation": [
+          { "original_user": "svc-superset", "new_user": ".*", "allow": true }
+        ],
+        "queries": [
+          { "user": "svc-dbt", "allow": ["execute","kill","view"] },
+          { "group": "analysts", "allow": ["execute","view"] }
+        ]
+      }
+# (그룹 provider/groups.txt 는 상단 coordinator.additionalConfigFiles 에 통합)
 
 # 레이어별 Iceberg 카탈로그(Polaris warehouse = 레이어명)
 # 공통 블록: REST→Polaris OAUTH2 + native S3→SeaweedFS path-style.
