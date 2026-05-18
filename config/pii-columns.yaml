@@ -1,0 +1,27 @@
+# ============================================================================
+# PII 컬럼 표준 어휘 (거버넌스 SSOT) — FU-9 / A안
+# ----------------------------------------------------------------------------
+# Trino file-based ACL 은 컬럼 mask 의 name 을 "리터럴"로만 매칭(정규식 불가,
+# Trino 사양). 소스마다 PII 컬럼명이 제각각(email/user_email/mail...)이면
+# Trino rules.json 이 폭증한다.
+#
+# 해법(A): PII 는 **여기 정의된 표준명으로만** Silver/Gold 에 노출한다.
+#   - 소스 원본명이 표준과 다르면 dbt staging 에서 표준명으로 alias.
+#     (ingestion-map.yaml 의 sources.<>.tables[].piiRename 에 매핑 선언 →
+#      scripts/dbt-gen-models.sh 가 stg_ 모델에 `"<원본>" AS <표준>` 생성)
+#   - Trino rules.json(analysts 그룹) 컬럼 마스크 목록 = **이 canonical
+#     목록과 1:1**. table:".*" 이므로 테이블/소스 수와 무관하게 고정 길이.
+#
+# 결과: 1000+ 테이블·N 소스여도 마스크 설정은 이 목록 길이로 불변.
+# 변경 시: 이 파일 + charts/trino/values.yaml accessControl 컬럼목록을
+#          함께 갱신(둘이 동일해야 함). 정책 변경 후 coordinator 롤아웃 필수.
+# ============================================================================
+canonical:
+  - email
+  - phone
+  - mobile
+  - ssn
+  - rrn
+  - resident_no
+  - password
+  - passwd

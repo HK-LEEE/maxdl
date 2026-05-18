@@ -166,6 +166,14 @@ kubectl exec -n maxdl-query deploy/trino-coordinator -- \
 > helmfile presync 배선). **새 테이블에 staging/Silver 를 손으로 짜지
 > 않는다** — ingestion-map 갱신 후 이 스크립트만 실행. 아래 4.1~4.2 는
 > 생성 결과의 구조 설명(이해/디버깅용). **Gold(4.3)만 도메인 수작업.**
+>
+> **PII 거버넌스(FU-9/A)**: PII 컬럼은 `config/pii-columns.yaml` 표준
+> 어휘(email/phone/ssn/...)로만 Silver/Gold 에 노출한다. 소스 원본명이
+> 다르면 `ingestion-map.yaml` 의 해당 테이블에
+> `piiRename: { <원본컬럼>: <표준명> }` 선언 → 생성기가 stg_ 에서 표준명
+> 으로 alias. Trino 컬럼 마스킹은 그 표준 어휘만 보므로 소스/테이블 수가
+> 늘어도 마스킹 설정은 불변(rules.json 변경 시 `kubectl rollout restart
+> deployment trino-coordinator -n maxdl-query` 필수).
 
 ### 4.1 staging (Bronze → 정제 view)
 
