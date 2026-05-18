@@ -295,6 +295,11 @@ k3s INSTALL_K3S_SKIP_DOWNLOAD → airgap-load 이미지 적재). bash -n 통과.
 amd64 일치 시 보장(MANIFEST 비교 게이트), 첫 배포 전 동일버전 폐기형
 호스트 리허설 권장.
 
+`docs/INSTALL_CHECKLIST.md` — 위 절차의 **현장용 호스트별 체크박스**
+(A 온라인 / 운반 / B-1~B-4 폐쇄망). "호스트 B 는 명령만 실행하면 끝?"
+→ 자동은 B-2 한 줄뿐, secrets.env 실제값·무결성·검증 게이트는 수동
+임을 명시한 절 포함.
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
