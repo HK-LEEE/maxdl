@@ -48,13 +48,22 @@ def w(rel, content):
     os.makedirs(os.path.dirname(p), exist_ok=True)
     open(p, "w").write(content)
 
-def stg_sql(src, t):
+def stg_sql(src, t, pii=None):
+    # pii: {원본컬럼: 표준PII명} (ingestion-map piiRename). 없으면(기본)
+    # 출력은 기존과 바이트 동일(비파괴). 있으면 원본을 star 에서 제외하고
+    # "<원본>" AS <표준> 으로 alias → Trino 는 고정 표준명만 마스킹.
+    pii = pii or {}
+    base_exc = ["_airbyte_raw_id", "_airbyte_meta",
+                "_airbyte_generation_id", "_airbyte_extracted_at"]
+    exc = base_exc + list(pii.keys())
+    exc_s = ", ".join(f"'{c}'" for c in exc)
+    alias = "".join(f'    "{o}" as {c},\n' for o, c in pii.items())
     return (f"-- 자동 생성: {src}.{t} Bronze → staging cleaned view\n"
             "{{ config(materialized='view') }}\n"
             "select\n"
             f"    {{{{ dbt_utils.star(from=source('{src}', '{t}'), "
-            "except=['_airbyte_raw_id', '_airbyte_meta', "
-            "'_airbyte_generation_id', '_airbyte_extracted_at']) }},\n"
+            f"except=[{exc_s}]) }}}},\n"
+            f"{alias}"
             "    _airbyte_extracted_at as _bronze_extracted_at_epoch,\n"
             "    {{ maxdl_audit_columns() }}\n"
             f"from {{{{ source('{src}', '{t}') }}}}\n")
@@ -98,7 +107,8 @@ for src, sdef in MAP["sources"].items():
     for tdef in sdef["tables"]:
         t = norm(tdef["name"])
         mode = tdef["mode"]
-        w(f"models/staging/{src}/stg_{src}__{t}.sql", stg_sql(src, t))
+        w(f"models/staging/{src}/stg_{src}__{t}.sql",
+          stg_sql(src, t, tdef.get("piiRename")))
         if mode == "replica":
             w(f"models/intermediate/{src}/int_{src}__{t}.sql",
               int_replica(src, t))
