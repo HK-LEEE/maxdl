@@ -43,11 +43,5 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: maxdl-governance      # OpenMetadata + OpenSearch + OM-번들 Airflow
-  labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: governance }
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: maxdl-compute         # (예약, 미배포) Spark/Flink 추후 부착용
   labels: { app.kubernetes.io/part-of: maxdl, maxdl/tier: compute-reserved }

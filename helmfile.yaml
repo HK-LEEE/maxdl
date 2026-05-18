@@ -30,8 +30,6 @@ repositories:
     url: https://airflow.apache.org
   - name: superset
     url: https://apache.github.io/superset
-  - name: open-metadata
-    url: https://helm.open-metadata.org
 
 # 공통 hook helper: 경로는 helmfile 디렉토리 기준
 releases:
@@ -158,25 +156,6 @@ releases:
         command: sh
         args: ["-c", "kubectl -n maxdl-bi rollout status deploy/superset --timeout=600s && PW=$(kubectl get secret superset-admin -n maxdl-bi -o jsonpath='{.data.admin-password}'|base64 -d) && kubectl -n maxdl-bi exec deploy/superset -- superset fab reset-password --username admin --password \"$PW\""]
 
-  # --- 8a) OpenMetadata 의존성 (MySQL+OpenSearch+Airflow) ---
-  - name: openmetadata-deps
-    namespace: maxdl-governance
-    chart: open-metadata/openmetadata-dependencies
-    version: 1.12.8
-    needs: [maxdl-system/sealed-secrets]
-    set:
-      - name: airflow.logs.persistence.enabled       # k3d RWO — RWX PVC 회피
-        value: "false"
-
-  # --- 8b) OpenMetadata 본체 (+ NodePort 30085) ---
-  - name: openmetadata
-    namespace: maxdl-governance
-    chart: open-metadata/openmetadata
-    version: 1.12.8
-    needs: [maxdl-governance/openmetadata-deps]
-    values: [charts/openmetadata/values.yaml]
-    hooks:
-      - events: [postsync]
-        showlogs: true
-        command: kubectl
-        args: ["apply", "-f", "deploy/k8s/openmetadata/nodeport-svc.yaml"]
+  # OpenMetadata 제거(FU-9 결정): 접근 거버넌스는 Trino file-based 로 해결,
+  # 계보/카탈로그는 dbt docs(추가 인프라 0)로 대체. 빈 OM 8pod 데드웨이트
+  # 제거 — 폐쇄망 경량화. (계획서 거버넌스=OM 결정 의도적 번복, 근거 FOLLOWUPS)
