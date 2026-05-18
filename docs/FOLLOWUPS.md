@@ -268,6 +268,13 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
   All checks passed + "SSL validation disabled" 경고 소멸 = 검증 활성·
   통과(cert SAN=trino.maxdl-query.svc.cluster.local=TRINO_HOST).
 - **잔여(정직)**: 폐쇄망 이동 시 이 컷오버 구성 동반(TLS·시크릿 포함)
+### 3.0c 설치 문서 (Ubuntu 베어 OS) — ✅ 완료
+
+`docs/INSTALL_UBUNTU.md` — Ubuntu 24.04 베어 머신에서 Docker→CLI도구
+→k3d→커스텀이미지→helmfile→검증까지 단계별(트러블슈팅 포함). 온라인
+설치 경로(폐쇄망은 AIRGAP_RUNBOOK). 커스텀 이미지 maxdl/airflow:fu3
+빌드 절차 포함(현재 빌드본 존재 확인).
+
 ### 3.0b P2 폐쇄망 배포 런북 — ✅ 완료
 
 `docs/AIRGAP_RUNBOOK.md` — 0(P1 사전조건)~9(잔여) 단일 순서 절차서로
