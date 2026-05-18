@@ -30,6 +30,7 @@ service:
   nodePort: 30080
 
 # 비밀값 주입(모든 pod 공통): Polaris OAuth2 / SeaweedFS S3 정적 키
+#  + Trino JWT 인증 SSO 파라미터(환경변수화, ${ENV:} 치환용)
 env:
   - name: POLARIS_CREDENTIAL          # "root:<secret>" (스파이크) — polaris-oauth
     valueFrom: { secretKeyRef: { name: polaris-oauth, key: credential } }
@@ -37,6 +38,39 @@ env:
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: accessKey } }
   - name: S3_SECRET_KEY
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
+  - name: MAXDL_SSO_JWKS_URL          # maxplatform SSO 공개키(JWKS) — 검증용
+    valueFrom: { secretKeyRef: { name: trino-sso, key: jwks-url } }
+  - name: MAXDL_SSO_ISSUER
+    valueFrom: { secretKeyRef: { name: trino-sso, key: issuer } }
+  - name: MAXDL_SSO_AUDIENCE
+    valueFrom: { secretKeyRef: { name: trino-sso, key: audience } }
+  - name: MAXDL_SSO_PRINCIPAL_FIELD   # 유저명 클레임(기본 sub, 실토큰으로 실측)
+    valueFrom: { secretKeyRef: { name: trino-sso, key: principal-field } }
+
+# =============================================================================
+# 인증 (1단계: 코드화만 — 라이브 미적용. 컷오버는 Superset SSO+임퍼소네이션
+#  과 동시에. 지금 켜면 토큰없는 Superset/dbt 즉시 차단됨 — 의도된 보류).
+# - 다중 인증자: 사람=JWT(maxplatform SSO), 기계(dbt/Airflow)=PASSWORD(svc-dbt)
+#   (SSO 머신토큰 미발급 → password-file 경로). 사내망이라 allow-insecure-
+#   over-http=true (정식 TLS 는 FU-7 보류 그대로).
+# - JWKS/issuer/audience/principal 은 ${ENV:} 로 환경변수화(secrets.env SSOT).
+# - svc-dbt password db(htpasswd 포맷 Secret 'trino-password-db')는 컷오버 시
+#   secrets.env 의 SVC_DBT_PASSWORD 로 생성(앞으로의 dbt-path 단계에서 배선).
+# =============================================================================
+server:
+  config:
+    authenticationType: "jwt,password"
+
+auth:
+  # 컷오버 시 생성되는 htpasswd 포맷 Secret(svc-dbt) 참조
+  passwordAuthSecret: "trino-password-db"
+
+additionalConfigProperties:
+  - http-server.authentication.allow-insecure-over-http=true
+  - http-server.authentication.jwt.key-file=${ENV:MAXDL_SSO_JWKS_URL}
+  - http-server.authentication.jwt.required-issuer=${ENV:MAXDL_SSO_ISSUER}
+  - http-server.authentication.jwt.required-audience=${ENV:MAXDL_SSO_AUDIENCE}
+  - http-server.authentication.jwt.principal-field=${ENV:MAXDL_SSO_PRINCIPAL_FIELD}
 
 # 레이어별 Iceberg 카탈로그(Polaris warehouse = 레이어명)
 # 공통 블록: REST→Polaris OAUTH2 + native S3→SeaweedFS path-style.
