@@ -130,7 +130,8 @@ releases:
       - events: [presync]
         showlogs: true
         command: sh
-        args: ["-c", "bash scripts/airflow-artifact-publish.sh"]
+        # ingestion-map → dbt staging/Silver 모델 결정적 생성 후 아티팩트 발행
+        args: ["-c", "bash scripts/dbt-gen-models.sh && bash scripts/airflow-artifact-publish.sh"]
 
   # --- 7) Superset (admin 비번은 SealedSecret → postsync 재설정) ---
   - name: superset

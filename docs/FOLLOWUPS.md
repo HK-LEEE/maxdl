@@ -75,6 +75,13 @@ Polaris principal `svc-trino`(bronze RO + silver/gold RW)·`svc-airbyte`
   + Airflow Variable `airbyte_conn_<src>` 세팅, helmfile airbyte hook 배선.
   드리프트 실측·교정: maxapex 뷰 6개(yaml 비대상) 해제, maxtdoracle
   PRODUCTION_LOG 등록 → 4/4 라이브 = yaml 정확 일치, 재실행 변경 0.
+- **dbt staging/Silver 모델 생성 IaC 화 완료**: `scripts/dbt-gen-models.sh`
+  (멱등) — ingestion-map.yaml → 183 stg_ + 183 int_(merge=incremental
+  dedup/replica=table) + `_staging__sources.yml` + seed CSV 결정적 생성.
+  `--check` 로 **기존 366 .sql + sources.yml + CSV 바이트 동일 검증(드리프트
+  0, CSV CRLF 보존)**. helmfile presync(publish 직전) 배선. Gold(marts)는
+  도메인 로직이라 대상 아님(수작업 유지). → 새 테이블: ingestion-map 한 줄
+  + gen + publish 면 Silver 까지 무인.
 - **소스/목적지 프로비저닝 IaC 화 완료**: applier 에 프로비저닝 단계 추가
   — 소스 4종은 `src-db-*` 시크릿 + 라이브 역추출 known-good 템플릿
   (postgres/mssql/oracle)으로 멱등 ensure(검증: check_connection
