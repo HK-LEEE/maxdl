@@ -248,9 +248,12 @@ GUI 정책편집만 포기(코드리뷰 거버넌스로 대체).
   검증: piiRename 없을 때 366 .sql 바이트 동일(비파괴), gen-trino-acl
   멱등·스모크 통과. 워크플로: pii-columns.yaml 편집 → gen-trino-acl.sh
   → 커밋 → (반영) coordinator rollout restart.
-- **잔여(정직)**: ② dbt-trino 1.10.1 인증서 *검증* 기본 off(전송+인증
-  동작, 내부 self-signed 수용 — 추후 cert:True) ③ 폐쇄망 이동 시 이
-  컷오버 구성 동반(TLS·시크릿 포함)
+- **② dbt-trino 인증서 검증 — ✅ 활성(해소)**: profiles `cert` 를
+  TRINO_CERT(env, 기본 빈값=레거시·비파괴) 게이트로, Airflow 에
+  `/etc/trino-ca/tls.crt`(마운트된 self-signed CA) 주입. `dbt debug`
+  All checks passed + "SSL validation disabled" 경고 소멸 = 검증 활성·
+  통과(cert SAN=trino.maxdl-query.svc.cluster.local=TRINO_HOST).
+- **잔여(정직)**: 폐쇄망 이동 시 이 컷오버 구성 동반(TLS·시크릿 포함)
 ### 3.0b P2 폐쇄망 배포 런북 — ✅ 완료
 
 `docs/AIRGAP_RUNBOOK.md` — 0(P1 사전조건)~9(잔여) 단일 순서 절차서로

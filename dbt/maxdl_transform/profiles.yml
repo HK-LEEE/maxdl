@@ -16,9 +16,12 @@ maxdl_transform:
       password: "{{ env_var('TRINO_PASSWORD', '') }}"
       host: "{{ env_var('TRINO_HOST', 'trino.maxdl-query.svc.cluster.local') }}"
       port: "{{ env_var('TRINO_PORT', '8080') | int }}"
-      # 컷오버 시 https/8443 + svc-dbt(ldap). self-signed 신뢰는
-      # REQUESTS_CA_BUNDLE(=마운트된 trino-tls-ca) env 로 — verify 끄지 않음.
       http_scheme: "{{ env_var('TRINO_HTTP_SCHEME', 'http') }}"
+      # ②: 인증서 *검증* 활성. TRINO_CERT=마운트된 self-signed CA 경로
+      # (/etc/trino-ca/tls.crt) → dbt-trino 가 그 CA 로 검증(검증 OFF 아님).
+      # 빈 기본값=레거시(검증 off, 비-cutover 경로 비파괴). cert SAN=
+      # trino.maxdl-query.svc.cluster.local=TRINO_HOST 라 검증 통과.
+      cert: "{{ env_var('TRINO_CERT', '') }}"
       catalog: "{{ env_var('TRINO_CATALOG', 'iceberg_silver') }}"
       schema: "{{ env_var('TRINO_SCHEMA', 'silver') }}"
       threads: 4
