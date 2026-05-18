@@ -165,10 +165,16 @@ Trino 유저명" 기준으로 처리하므로 인증방식과 무관.
   `trino-password-db`(htpasswd, secrets.env 유저비번→Secret 생성) +
   Airflow/dbt 프로필에 svc-dbt 주입 ③ Superset→Trino 실유저 임퍼소네이션.
   셋 다 준비돼야 1회 조율 컷오버.
-- **남은 단계**: 2단계 password-db 생성+dbt path 배선 · 3단계 Superset
-  임퍼소네이션 · 4단계 Ranger(정책 GUI·컬럼마스킹·감사) · 5단계 OM 활성화
-  (인제스션 커넥터) + OM↔Ranger 분류 연계. 자원 실측(단일노드 수용성)
-  선행 필요. 폐쇄망 이동 *전* 구축·검증 권장.
+- **2단계 완료(코드화·시크릿 생성, 비파괴)**: `scripts/gen-trino-password-db.sh`
+  (secrets.env 평문→bcrypt→`trino-password-db` Secret key=password.db,
+  멱등) + `trino-svc-dbt`(seal-from-env, TRINO_PASSWORD) 생성·봉인·적용.
+  `profiles.yml`·Airflow env 를 **TRINO_METHOD 게이트(기본 none=현 무인증
+  동작 그대로)**, TRINO_USER=svc-dbt, extraEnvFrom trino-svc-dbt 배선.
+  helmfile trino presync 훅. `helmfile template` exit 0. **라이브 무변경**
+  (시크릿만 생성, 재배포·인증 미적용 — 컷오버 때 TRINO_METHOD=ldap 플립).
+- **남은 단계**: 3단계 Superset 임퍼소네이션 · 4단계 Ranger(정책 GUI·
+  컬럼마스킹·감사) · 5단계 OM 활성화(인제스션 커넥터) + OM↔Ranger 분류
+  연계. 자원 실측(단일노드 수용성) 선행 필요. 폐쇄망 이동 *전* 구축·검증 권장.
 - **트레이드오프(정직)**: 유저 추가/삭제 수동(중앙 디렉토리/SSO 없음) —
   소수 유저 환경 수용. 대규모면 추후 SSO 재검토 여지.
 

@@ -25,7 +25,11 @@ env:
   - name: TRINO_PORT
     value: "8080"
   - name: TRINO_USER
-    value: "dbt"
+    value: "svc-dbt"
+  # 인증 게이트: 기본 none(현 무인증 — 비파괴). 컷오버 시 "ldap" 로 플립
+  # → dbt-trino 가 svc-dbt:TRINO_PASSWORD 로 파일기반 PASSWORD 인증.
+  - name: TRINO_METHOD
+    value: "none"
   - name: AIRBYTE_API
     value: "http://airbyte-airbyte-server-svc.maxdl-ingest:8001"
   # 동시성 상한(단일노드 Trino 과부하/OOM 방지) + DAG당 동시 run 1개
@@ -43,10 +47,14 @@ env:
     value: "/opt/airflow/artifact/dbt/maxdl_transform"
   - name: DBT_MANIFEST
     value: "/opt/airflow/artifact/dbt/maxdl_transform/target/manifest.json"
-# Airbyte API 자격: 차트 env 스키마는 valueFrom 미허용 → extraEnvFrom(secretRef)
+# Airbyte API 자격 + Trino svc-dbt 비번: 차트 env 스키마 valueFrom 미허용
+# → extraEnvFrom(secretRef). trino-svc-dbt 의 TRINO_PASSWORD 는 method=ldap
+# 컷오버 전까지 미사용(유휴) — 비파괴.
 extraEnvFrom: |
   - secretRef:
       name: airbyte-api
+  - secretRef:
+      name: trino-svc-dbt
 
 config:
   core:
