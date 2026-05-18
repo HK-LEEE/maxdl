@@ -206,3 +206,45 @@ kubectl rollout restart deployment trino-coordinator -n maxdl-query
   Airbyte 증분 전체 실패. 불확실하면 replica(안전). 근거·사례
   ADD_NEW_DATABASE §0.2 / FOLLOWUPS FU-4.
 - 첫 신규 소스는 폐기형 동일버전 호스트에서 1회 리허설 권장.
+
+---
+
+## §E. 반영 명령 요약 (편집 끝낸 뒤 — 복붙)
+
+SSOT 파일 편집은 **수동**(자동 반영 아님). 편집 후 아래를 실행하면
+`helmfile sync` 훅이 dbt-gen→아티팩트 재발행→Airbyte 수렴→sealed
+apply 를 연쇄한다. **Airflow 아티팩트 refetch 와 동기화는 수동 트리거.**
+
+```bash
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; export PATH="/usr/local/bin:$PATH"
+```
+
+**흐름 A — 기존 DB 에 테이블만** (시크릿 불요):
+```bash
+scripts/dbt-gen-models.sh --check          # 편집 정합성(드리프트 0) 확인
+helmfile -f helmfile.yaml sync             # dbt-gen→아티팩트 재발행→Airbyte 수렴(훅, 무접속)
+kubectl -n maxdl-orchestrate rollout restart \
+  deploy/airflow-scheduler deploy/airflow-dag-processor   # 새 아티팩트 refetch
+# 동기화 1회(DAG 트리거/Airbyte) 후:
+kubectl exec -n maxdl-query deploy/trino-coordinator -- \
+  trino --execute "SELECT count(*) FROM iceberg_bronze.<src>.<table>"
+```
+
+**흐름 B — 신규 DB** (시크릿 봉인 선행 — `helmfile sync` 전 필수):
+```bash
+kubeseal --fetch-cert --controller-namespace maxdl-system \
+  --controller-name sealed-secrets-controller > /tmp/pub.pem
+scripts/seal-from-env.sh --cert /tmp/pub.pem --only src-db-<name> --apply
+shred -u /tmp/pub.pem
+scripts/dbt-gen-models.sh --check
+helmfile -f helmfile.yaml sync
+kubectl -n maxdl-orchestrate rollout restart \
+  deploy/airflow-scheduler deploy/airflow-dag-processor
+```
+
+> 훅 대신 스크립트 개별 실행도 동일: `dbt-gen-models.sh` →
+> `airflow-artifact-publish.sh` → `airbyte-apply-ingestion-map.sh --api
+> http://localhost:30081 --set-airflow-vars` → `rollout restart`.
+> 함정: `source-schema.json` 비면 `dbt-gen-models.sh` 즉시 실패
+> (fallback 없음) / 신규 DB sealed yaml 없으면 sealed 훅 적용 대상
+> 없음 → 봉인 선행. 자동/수동 경계 표는 `ADD_NEW_DATABASE.md` §8.1.
