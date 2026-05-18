@@ -19,7 +19,6 @@
 | Trino | http://localhost:30080 |
 | Airbyte API/UI | (port-forward) `svc/airbyte-airbyte-server-svc:8001` |
 | Airflow API | http://localhost:30082 (v3.2.0) |
-| OpenMetadata | 30085 (예정) |
 | Superset | http://localhost:30088 |
 | Polaris REST | http://localhost:30181 |
 

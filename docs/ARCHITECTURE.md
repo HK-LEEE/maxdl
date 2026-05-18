@@ -23,7 +23,7 @@ flowchart LR
         QRY["Trino<br/>(maxdl-query)<br/>쿼리 엔진"]
         ORC["Airflow + Cosmos<br/>(maxdl-orchestrate)<br/>오케스트레이션"]
         BI["Superset<br/>(maxdl-bi)<br/>BI"]
-        GOV["OpenMetadata<br/>(maxdl-governance)<br/>거버넌스"]
+        GOV["거버넌스: Trino file-based ACL<br/>(접근통제·컬럼마스킹) / dbt docs(계보)"]
     end
 
     SEA["SeaweedFS S3<br/>(외부 Docker, 공유)<br/>버킷 maxdl-warehouse"]
@@ -40,7 +40,7 @@ flowchart LR
     QRY -.-> GOV
 ```
 
-데이터는 **소스 DB → Airbyte(인제스션) → Bronze(Iceberg) → dbt-trino(Staging→Silver→Gold, 메달리온) → Trino(쿼리) → Superset(BI) / OpenMetadata(거버넌스)** 순으로 흐른다. Airflow + Cosmos 가 전체를 오케스트레이션한다.
+데이터는 **소스 DB → Airbyte(인제스션) → Bronze(Iceberg) → dbt-trino(Staging→Silver→Gold, 메달리온) → Trino(쿼리) → Superset(BI)** 순으로 흐른다. Airflow + Cosmos 가 전체를 오케스트레이션한다. 거버넌스는 별도 컴포넌트가 아니라 **Trino 내장 file-based access control**(유저/그룹 접근통제·컬럼마스킹·임퍼소네이션, 정책=git JSON)과 **dbt docs**(계보·카탈로그)로 제공한다. (이전의 OpenMetadata 는 FU-9 에서 제거 — 근거 `docs/FOLLOWUPS.md` §3.0.)
 
 > **Spark / Flink 는 준비만 되어 있고 미배포 상태다.** `deploy/k8s/namespaces.yaml` 에 `maxdl-compute` 네임스페이스가 "추후 부착용으로 예약(미배포)"으로 정의되어 있다.
 
@@ -59,13 +59,13 @@ flowchart LR
 | Airbyte V2 | 소스 DB → Bronze 인제스션(community edition) | 플랫폼 2.1.0 | 2.1.0 | `maxdl-ingest` |
 | Apache Airflow | 오케스트레이션(KubernetesExecutor) + Cosmos | 3.2.1 (커스텀 이미지 `maxdl/airflow:fu3`, `deploy/airflow-image/Dockerfile`) | 1.21.0 | `maxdl-orchestrate` |
 | Apache Superset | BI / 대시보드(Trino SQLAlchemy 데이터소스) | **6.1.0** (이미지 태그 오버라이드; 차트는 5.0.0 까지만 발행) | 0.15.5 | `maxdl-bi` |
-| OpenMetadata (+ deps) | 메타데이터 / 거버넌스 / 리니지(MySQL+OpenSearch+번들 Airflow) | 1.12.8 | 1.12.8 | `maxdl-governance` |
+| 거버넌스 | 접근통제·컬럼마스킹 = Trino 내장 file-based ACL(`charts/trino/values.yaml` `accessControl`) / 계보·카탈로그 = dbt docs(`dbt docs generate --static`) | — (별도 컴포넌트 없음) | — | — |
 
 > Airflow 차트 values 헤더는 app 3.2.0 으로 적었으나, 실제 배포 이미지는 `deploy/airflow-image/Dockerfile` 의 `FROM apache/airflow:3.2.1-python3.12` 다. 버전 감사(FU-4b, RUNBOOK)에서 3.2.0→3.2.1 패치를 권장했고 Dockerfile 에 3.2.1 로 반영되어 있다.
 
 ### 2.1 네임스페이스 토폴로지
 
-`deploy/k8s/namespaces.yaml` 에 정의된 8개 네임스페이스(라벨 `app.kubernetes.io/part-of=maxdl` 통일):
+`deploy/k8s/namespaces.yaml` 에 정의된 7개 네임스페이스(라벨 `app.kubernetes.io/part-of=maxdl` 통일):
 
 | 네임스페이스 | tier | 용도 |
 |---|---|---|
@@ -75,7 +75,6 @@ flowchart LR
 | `maxdl-query` | query | Trino(coordinator + worker) |
 | `maxdl-orchestrate` | orchestrate | Apache Airflow + Cosmos |
 | `maxdl-bi` | bi | Apache Superset |
-| `maxdl-governance` | governance | OpenMetadata + OpenSearch + 번들 Airflow |
 | `maxdl-compute` | compute-reserved | **(예약, 미배포)** Spark/Flink 추후 부착용 |
 
 SeaweedFS 는 클러스터 외부 Docker 이므로 네임스페이스가 없다.
@@ -87,7 +86,6 @@ SeaweedFS 는 클러스터 외부 Docker 이므로 네임스페이스가 없다.
 | Trino | http://localhost:30080 |
 | Airbyte 웹앱 | http://localhost:30081 |
 | Airflow API 서버 | http://localhost:30082 |
-| OpenMetadata | 30085 (별도 NodePort Service: `deploy/k8s/openmetadata/nodeport-svc.yaml`) |
 | Superset | http://localhost:30088 |
 | Polaris REST | http://localhost:30181 |
 
@@ -148,6 +146,6 @@ dbt 계층 구체화(`dbt/maxdl_transform/dbt_project.yml`):
 | VIEW_* 권한 필수 | `cr-bronze-ro` 에 `VIEW_LIST`/`VIEW_READ_PROPERTIES`/`VIEW_FULL_METADATA` 미부여 시 Trino "Failed to list views" 로 테이블 해석 전체 실패 | `catalog-bootstrap.sh` 주석(검증됨) |
 | SealedSecret 으로 평문 0 | 모든 자격증명(소스 DB·S3·Polaris·Superset 등)은 SealedSecret 으로만 커밋. 차트 values 평문 시크릿 0 (FU-5, grep 통과). `.gitignore` 가 평문 패턴 차단 | FOLLOWUPS FU-5, `scripts/seal-secret.sh`, `.gitignore` |
 | Iceberg 타임스탬프 정밀도 | dbt-trino 기본 `current_timestamp`(TIMESTAMP(3) WITH TZ)를 Iceberg 가 거부 → `macros/trino_overrides.sql` 에서 TIMESTAMP(6) 으로 오버라이드(미적용 시 감사컬럼/snapshot 생성 전부 실패) | `macros/trino_overrides.sql` |
-| helmfile SSOT (FU-6) | 9개 릴리스를 `helmfile.yaml` 로 선언, `needs` 의존순서 + hooks(SealedSecret/Polaris bootstrap/Oracle 커넥터/Superset admin/OM NodePort). 클린 전체 재구축 검증은 폐기형 클러스터 권장(잔여 AC) | FOLLOWUPS FU-6 |
+| helmfile SSOT (FU-6) | 7개 릴리스를 `helmfile.yaml` 로 선언, `needs` 의존순서 + hooks(SealedSecret/Polaris bootstrap/Oracle 커넥터/Superset admin/dbt 아티팩트·password-db). 클린 전체 재구축 검증은 폐기형 클러스터 권장(잔여 AC) | FOLLOWUPS FU-6 |
 
 > 위 값이 불명확하거나 운영 중 변경 가능성이 있는 항목은 [RUNBOOK](./RUNBOOK.md) 의 최신 표를 신뢰원천으로 삼는다.

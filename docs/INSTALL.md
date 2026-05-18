@@ -37,7 +37,7 @@ RUNBOOK §1 에 따라 다음 CLI 가 `~/.local/bin` 에 설치되어 있어야 
 
 ### 0단계: k3d 클러스터 생성
 
-- 30000번대 NodePort 가 호스트로 매핑되도록 포트 매핑(정책: 30000번대 — Trino 30080, Airbyte 30081, Airflow 30082, OM 30085, Superset 30088, Polaris 30181).
+- 30000번대 NodePort 가 호스트로 매핑되도록 포트 매핑(정책: 30000번대 — Trino 30080, Airbyte 30081, Airflow 30082, Superset 30088, Polaris 30181).
 - 단일 노드 환경에서 디스크 포화 시 과도한 eviction 을 피하도록 kubelet eviction 완화 옵션을 적용한다.
 
 > 정확한 k3d 생성 명령(포트 매핑·eviction 완화 플래그)은 환경 의존적이므로 [RUNBOOK](./RUNBOOK.md) 의 클러스터 생성 절차를 신뢰원천으로 사용한다. 클러스터는 `maxdl`(k3s 단일노드).
@@ -46,11 +46,11 @@ RUNBOOK §1 에 따라 다음 CLI 가 `~/.local/bin` 에 설치되어 있어야 
 
 `helmfile.yaml` 의 첫 릴리스 `sealed-secrets`(`maxdl-system`, 차트 2.18.5)가 다음을 수행한다.
 
-- **presync hook**: `kubectl apply -f deploy/k8s/namespaces.yaml` (8개 네임스페이스 생성)
+- **presync hook**: `kubectl apply -f deploy/k8s/namespaces.yaml` (7개 네임스페이스 생성)
 - 컨트롤러 배포(`fullnameOverride=sealed-secrets-controller`)
 - **postsync hook**: 컨트롤러 rollout 대기 후 `kubectl apply -f deploy/k8s/sealed/` (전체 SealedSecret 적용)
 
-`deploy/k8s/sealed/` 에는 `src-db-*`, `seaweedfs-s3.*`, `polaris-*`, `superset-*`, `airflow-*`, `mysql-secrets`, `airbyte-api` 등이 포함된다.
+`deploy/k8s/sealed/` 에는 `src-db-*`, `seaweedfs-s3.*`, `polaris-*`, `superset-*`, `airflow-*`, `airbyte-api`, `trino-svc-dbt`, `trino-password-db` 등이 포함된다.
 
 ### 2단계: Polaris 메타스토어(PostgreSQL)
 
@@ -99,11 +99,16 @@ k3d image import maxdl/airflow:fu3 -c maxdl
 - **postsync hook**: superset rollout 대기 → SealedSecret `superset-admin` 에서 실제 강력 비번을 읽어 `superset fab reset-password` 로 즉시 재설정
 - `SECRET_KEY` 는 SealedSecret `superset-secret` → env(`SUPERSET_SECRET_KEY`) 주입(values 평문 0, FU-5). bootstrapScript 가 `psycopg2-binary` + `trino[sqlalchemy]` 설치.
 
-### 8단계: OpenMetadata (+ deps) + NodePort
+### 8단계: 거버넌스 (별도 컴포넌트 없음 — OpenMetadata 제거됨)
 
-- 릴리스 `openmetadata-deps`(`maxdl-governance`, open-metadata/openmetadata-dependencies 1.12.8): MySQL+OpenSearch+번들 Airflow. `airflow.logs.persistence.enabled=false`(k3d RWO — RWX PVC 회피). 사전 SealedSecret `mysql-secrets` / `airflow-secrets`(maxdl-governance).
-- 릴리스 `openmetadata`(open-metadata/openmetadata 1.12.8). `needs: [maxdl-governance/openmetadata-deps]`. `values: charts/openmetadata/values.yaml`.
-- **postsync hook**: `kubectl apply -f deploy/k8s/openmetadata/nodeport-svc.yaml` (NodePort 30085 고정 노출 — 차트 service 에 nodePort 필드 부재)
+- OpenMetadata 는 FU-9 에서 **제거**(빈 데드웨이트, 접근 거버넌스는 Trino
+  file-based 로 대체). 별도 8단계 릴리스 없음. helmfile 릴리스 7개로 종료.
+- **접근통제·컬럼마스킹**: Trino 내장 file-based access control
+  (`charts/trino/values.yaml` `accessControl`, 정책=git JSON). 인증=Trino
+  PASSWORD(svc-dbt/svc-superset + 그룹). 컷오버 시 활성(FOLLOWUPS FU-9).
+- **계보·카탈로그**: dbt docs — `scripts/airflow-artifact-publish.sh` 가
+  `dbt docs generate --static` 로 단일 HTML 생성(아티팩트 `target/
+  static_index.html`), `dbt docs serve` 로도 열람. 추가 인프라 0.
 
 ---
 
@@ -120,7 +125,7 @@ helmfile list       # 릴리스/네임스페이스/버전 목록
 helmfile apply
 ```
 
-`helmfile apply` 는 `needs` 로 의존순서를 강제하고, hooks 로 명령형 단계(네임스페이스/SealedSecret apply, Polaris bootstrap·카탈로그·RBAC, Oracle 커넥터 등록, Superset admin 재설정, OM NodePort)를 기존 idempotent 스크립트·매니페스트 호출로 실행한다(중복 작성 금지·SSOT 유지).
+`helmfile apply` 는 `needs` 로 의존순서를 강제하고, hooks 로 명령형 단계(네임스페이스/SealedSecret apply, Polaris bootstrap·카탈로그·RBAC, Oracle 커넥터 등록, Superset admin 재설정)를 기존 idempotent 스크립트·매니페스트 호출로 실행한다(중복 작성 금지·SSOT 유지).
 
 > **완전 클린 클러스터 재구축 검증은 폐기형(disposable) 클러스터에서 수행할 것을 권장한다.** 라이브 스택 파괴 방지를 위한 FU-6 의 잔여 AC 다(FOLLOWUPS FU-6). 라이브 환경에서 무분별한 `helmfile apply` 재실행은 피한다.
 
@@ -143,7 +148,7 @@ cd dbt/maxdl_transform && TRINO_HOST=localhost TRINO_PORT=30080 \
   /tmp/dbtvenv/bin/dbt debug --profiles-dir .
 
 # 3) 엔드포인트 200 확인 (RUNBOOK §2 의 NodePort 표 기준)
-#    Trino 30080 / Airbyte 30081 / Airflow 30082 / OM 30085 / Superset 30088 / Polaris 30181
+#    Trino 30080 / Airbyte 30081 / Airflow 30082 / Superset 30088 / Polaris 30181
 ```
 
 스모크가 모두 통과하면 Bronze 적재·dbt 변환을 위한 플랫폼이 준비된 것이다.
