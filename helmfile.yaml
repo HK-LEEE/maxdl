@@ -113,7 +113,7 @@ releases:
       - events: [postsync]
         showlogs: true
         command: sh
-        args: ["-c", "kubectl -n maxdl-ingest rollout status deploy/airbyte-server --timeout=600s && bash deploy/k8s/airbyte/register-oracle-connector.sh"]
+        args: ["-c", "kubectl -n maxdl-ingest rollout status deploy/airbyte-server --timeout=600s && kubectl apply -f deploy/k8s/airbyte/nodeport-svc.yaml && bash deploy/k8s/airbyte/register-oracle-connector.sh"]
 
   # --- 6) Airflow (KubernetesExecutor) ---
   - name: airflow
