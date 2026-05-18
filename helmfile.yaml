@@ -124,6 +124,13 @@ releases:
     version: 1.21.0
     needs: [maxdl-system/sealed-secrets]
     values: [charts/airflow/values.yaml]
+    hooks:
+      # presync: dbt/DAG 아티팩트를 SeaweedFS 에 발행(initContainer 가 fetch).
+      # 이미지엔 dbt/DAG 미동봉 → 새 모델/테이블 시 이미지 재빌드 불필요.
+      - events: [presync]
+        showlogs: true
+        command: sh
+        args: ["-c", "bash scripts/airflow-artifact-publish.sh"]
 
   # --- 7) Superset (admin 비번은 SealedSecret → postsync 재설정) ---
   - name: superset

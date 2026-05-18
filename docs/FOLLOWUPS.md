@@ -49,6 +49,15 @@ Polaris principal `svc-trino`(bronze RO + silver/gold RW)·`svc-airbyte`
 - **E2E 검증 완료**: 4개 ingest DAG + transform_gold 전부 성공
   (pfms 9/9, maxtdoracle 3/3, maxapex 149/149, maxplatform 209/209,
   transform_gold 5/5).
+- **SeaweedFS 아티팩트 패턴 전환(이미지 재빌드 제거)**: dbt 프로젝트·DAG·
+  manifest 를 이미지에 굽지 않고 버전 tar 로 SeaweedFS 발행
+  (`scripts/airflow-artifact-publish.sh`), pod initContainer 가
+  `scripts/s3artifact.py`(stdlib SigV4, 무의존)로 fetch→emptyDir 전개.
+  이미지는 pip 패키지층만(안정). 새 모델/테이블 시 **이미지 재빌드 불필요**
+  (아티팩트 재발행+롤아웃). 버전 env(`MAXDL_ARTIFACT_VERSION`, 기본 latest·
+  운영 SHA 핀). helmfile presync 훅 배선. **라이브 컷오버 검증**: 슬림
+  이미지로 4컴포넌트 initContainer fetch 성공, 5 DAG·manifest 아티팩트
+  로드 확인. seaweedfs-s3 를 maxdl-orchestrate 에도 봉인(SSOT 반영).
 
 ### 1.5 FU-4. 실 인제스션 매핑 + dbt 모델 — ✅ 해결
 
