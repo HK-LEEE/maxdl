@@ -9,10 +9,13 @@
 # 클러스터 / 배포판
 # -----------------------------------------------------------------------------
 cluster:
-  distro: k3d                       # 단일 노드 WSL2, k3s in Docker
+  # 개발=k3d(단일 노드 WSL2, k3s in Docker) / 운영(폐쇄망)=실 k3s.
+  # 이 필드는 어떤 릴리스도 템플릿 참조하지 않음(전수확인) — 기록용.
+  distro: k3d                       # dev: k3d / prod: k3s
   name: maxdl
-  # k3d 가 주입하는 호스트 별칭. 파드에서 호스트(Docker) 서비스 접근 시 사용.
-  hostAlias: host.k3d.internal
+  # host.k3d.internal 은 **k3d 전용** 호스트 별칭(파드→Docker 호스트).
+  # 실 k3s 엔 이 호스트명 자체가 없음. 비소비·기록용 잔재(연결 무관).
+  hostAlias: host.k3d.internal      # k3d-dev only (prod k3s 엔 미존재)
 
 # -----------------------------------------------------------------------------
 # 외부 노출 서비스 포트 (정책: 30000~32767 만 사용)
@@ -31,13 +34,17 @@ nodePorts:
 # 외부 인프라 (클러스터 외부 — 계획서 §외부 인프라)
 # -----------------------------------------------------------------------------
 external:
-  # 공유 SeaweedFS (maxplatform 운영과 공유 — 전용 버킷만 사용, 운영 버킷 침범 금지)
+  # S3(SeaweedFS/외부 S3) — ★권위(SSOT) 아님★. endpoint/region/bucket/
+  # 키의 단일출처는 deploy/secrets/secrets.env → seaweedfs-s3 시크릿.
+  # Trino/Polaris/Airbyte/catalog-bootstrap 모두 그 시크릿에서 파생하며
+  # 본 블록을 템플릿 참조하지 않음(전수확인). 아래는 비권위 기록용 —
+  # 개발=내부 Docker SeaweedFS, 운영=폐쇄망 외부 S3(secrets.env 만 교체).
+  # (filerEndpoint 는 소비처 0 으로 제거 — 혼선 방지.)
   seaweedfs:
-    s3Endpoint: "http://host.k3d.internal:8333"
-    filerEndpoint: "http://host.k3d.internal:8889"
-    region: "kr-dw-pt-001"
+    s3EndpointSSOT: "secrets.env: S3_ENDPOINT (예: http://192.168.8.88:8333)"
+    regionSSOT: "secrets.env: S3_REGION"
     identity: "datastore"           # 고유 키 사용(원 MAXPLATFORM_DS 키 금지)
-    warehouseBucket: "maxdl-warehouse"   # 레이크하우스 전용 버킷(신규 생성)
+    warehouseBucketSSOT: "secrets.env: S3_WAREHOUSE_BUCKET (예: maxdl-warehouse)"
   # 소스 DB 4종 (host 172.168.35.8) — 자격증명은 SealedSecret 으로 주입
   sourceDb:
     host: "172.168.35.8"
