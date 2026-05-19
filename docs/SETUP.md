@@ -137,15 +137,19 @@ for t in kubectl helm helmfile k3d kubeseal; do
 
 ### 1-B-1. [온라인 호스트] OS/도구/k3s 자산 수집
 
-전제: 폐쇄망 호스트와 **동일 Ubuntu 버전·amd64**. 온라인 호스트에
-Docker apt 저장소 구성(1-A-2 의 keyring/sources 부분까지) 선행.
+전제: **docker 만 필요**(sudo·호스트 apt 저장소 구성 불요). `.deb`
+closure 를 깨끗한 `ubuntu:24.04` 컨테이너 안에서 수집하므로 빌드
+호스트 상태와 무관한 완전 closure 가 보장된다. 폐쇄망 호스트와
+**동일 Ubuntu 버전**이어야 하며, 다른 버전이면 `UBUNTU_IMG=ubuntu:22.04
+scripts/airgap-os-deps.sh` 처럼 대상 버전으로 지정.
 
 ```bash
 git clone <maxdl repo> ~/project/maxdl && cd ~/project/maxdl
 scripts/airgap-os-deps.sh
 #   → dist/os-deps.tar.gz (+ .sha256, MANIFEST.txt)
-#     : Docker .deb closure + kubectl/helm/helmfile/kubeseal
-#       + k3s 바이너리·k3s-airgap-images·install.sh
+#     : Docker+의존 .deb 완전 closure(docker-ce/cli/containerd/buildx +
+#       python3-yaml/bcrypt/jq/openssl/ca-certificates + 전 의존, ~99개)
+#       + kubectl/helm/helmfile/kubeseal + k3s·k3s-airgap-images·install.sh
 ```
 **검증 게이트**: `dist/os-deps.tar.gz` + `.sha256` 존재.
 `dist/os-deps/MANIFEST.txt` 의 `ubuntu=` 가 폐쇄망 호스트와 일치
