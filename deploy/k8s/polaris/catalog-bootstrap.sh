@@ -14,9 +14,15 @@ set -euo pipefail
 
 NS="maxdl-catalog"
 POLARIS="http://localhost:30181"
-WAREHOUSE_BUCKET="maxdl-warehouse"
-REGION="kr-dw-pt-001"
-S3_ENDPOINT="http://host.k3d.internal:8333"   # 클러스터→호스트 SeaweedFS S3
+# SSOT 일원화: 버킷/리전/엔드포인트는 seaweedfs-s3 시크릿(=secrets.env)
+# 단일출처 파생. 개발=내부 Docker SeaweedFS, 운영=폐쇄망 외부 S3 —
+# secrets.env 값만 교체하면 코드 변경 없이 전환(하드코딩 제거).
+_s3() { kubectl get secret seaweedfs-s3 -n "$NS" -o jsonpath="{.data.$1}" | base64 -d; }
+WAREHOUSE_BUCKET="$(_s3 warehouseBucket)"
+REGION="$(_s3 region)"
+S3_ENDPOINT="$(_s3 endpoint)"
+[ -n "$WAREHOUSE_BUCKET" ] && [ -n "$REGION" ] && [ -n "$S3_ENDPOINT" ] \
+  || { echo "ERROR: seaweedfs-s3 시크릿에서 bucket/region/endpoint 미해석"; exit 1; }
 LAYERS=(bronze silver gold)
 
 # --- root 자격증명 조회 (SealedSecret 복호화본) ---

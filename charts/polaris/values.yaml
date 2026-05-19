@@ -78,5 +78,5 @@ extraEnv:
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: accessKey } }
   - name: AWS_SECRET_ACCESS_KEY
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
-  - name: AWS_REGION
-    value: "kr-dw-pt-001"
+  - name: AWS_REGION                 # SSOT: seaweedfs-s3(=secrets.env) 단일출처
+    valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: region } }

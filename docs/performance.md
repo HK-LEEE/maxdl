@@ -29,6 +29,11 @@
 ```
 1순위(즉효)  Trino 단일 워커 수직 증설 + 메모리/스레드 튜닝  ← 본 문서
 2순위(구조)  maxdl 전용 객체 스토리지 분리(공유 SeaweedFS 천장·부패 위험)
+             → 외부 운영 S3 사용 결정. **엔드포인트 SSOT 일원화 완료**:
+               endpoint/region/bucket/키 모두 secrets.env→seaweedfs-s3
+               시크릿 단일출처(Trino/Polaris/Airbyte/catalog-bootstrap
+               하드코딩 제거). 운영 전환=secrets.env 5값 교체+재봉인
+               +helmfile sync, 코드 변경 0.
 3순위(지속)  Iceberg compaction(rewrite_data_files·snapshot expire)
 4순위(선택)  그 다음에 멀티노드(Trino 워커 수평 확장)
 ```
