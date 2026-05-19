@@ -346,6 +346,16 @@ YAML/bash 문법·dbt-gen 드리프트0·소비자 하드코딩0·dev 기본값 
 시크릿 스키마(secrets-spec)는 기존부터 endpoint/region/warehouseBucket
 보유 → 재봉인 불요(값 교체 시에만). 미적용(사용자 배포 시점).
 
+### 3.0i 적재 주기(스케줄) 가이드 — ✅ 완료
+
+`docs/SCHEDULING.md` — 주기 = Airflow DAG `schedule`(Airbyte 아님,
+커넥션 scheduleType manual). 현재 4소스 균일 `@daily`, Gold 는
+Dataset 트리거(자동). schedule 형식표·**한국 타임존 주의(UTC 기본
+→ @daily=09:00 KST, Asia/Seoul 설정 권장)**·주기↔mode(merge/replica)
+상호작용·소스별 차등은 현재 미지원(팩토리 파라미터화 필요)·적용
+절차(아티팩트 재발행, 이미지 재빌드 0, 폐쇄망 무접속)·검증·잔여.
+코드 변경 없음(문서만).
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
