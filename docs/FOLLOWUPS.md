@@ -333,6 +333,19 @@ performance.md §3(운영자 수동: values.yaml 교체 → `helmfile -l
 name=trino sync` → 검증). 노드 24vCPU/90GiB 실측 기반, 동거
 워크로드 보호 봉투. 미적용 — 사용자가 원할 때 적용.
 
+### 3.0h S3 엔드포인트 SSOT 일원화 — ✅ 완료
+
+외부 운영 S3 사용 결정에 따라 endpoint/region/bucket 의 단일출처를
+`secrets.env`→`seaweedfs-s3` 시크릿으로 일원화. 하드코딩 제거 4곳:
+`charts/trino/values.yaml`(+`_bak`, env 주입+카탈로그 `${ENV:}`),
+`charts/polaris/values.yaml`(AWS_REGION→시크릿), `catalog-bootstrap.sh`
+(kubectl 파생), `airbyte-apply-ingestion-map.sh`(dst_config 시크릿
+출처). `ingestion-map.yaml` destination.s3 는 비권위 표기. 검증:
+YAML/bash 문법·dbt-gen 드리프트0·소비자 하드코딩0·dev 기본값 보존.
+운영 전환=secrets.env 5값 교체→재봉인→helmfile sync(코드 변경 0).
+시크릿 스키마(secrets-spec)는 기존부터 endpoint/region/warehouseBucket
+보유 → 재봉인 불요(값 교체 시에만). 미적용(사용자 배포 시점).
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시

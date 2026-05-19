@@ -19,7 +19,10 @@ modes:
 destination:
   connector: destination-s3-data-lake
   catalog: { type: POLARIS, server_uri: "http://polaris.maxdl-catalog.svc.cluster.local:8181/api/catalog", warehouse: bronze }
-  s3: { endpoint: "http://host.k3d.internal:8333", region: kr-dw-pt-001, pathStyleAccess: true, bucket: maxdl-warehouse, secret: seaweedfs-s3 }
+  # [SSOT] endpoint/region/bucket 의 단일출처는 secrets.env → seaweedfs-s3
+  # 시크릿. airbyte-apply 는 그 시크릿에서 읽음(아래 값은 비권위·정보용
+  # 참고치). 개발=내부 Docker, 운영=폐쇄망 외부 S3 전환은 secrets.env 만 교체.
+  s3: { endpoint: "(SSOT: secrets.env S3_ENDPOINT)", region: "(SSOT: S3_REGION)", pathStyleAccess: true, bucket: "(SSOT: S3_WAREHOUSE_BUCKET)", secret: seaweedfs-s3 }
 
 sources:
   maxplatform:

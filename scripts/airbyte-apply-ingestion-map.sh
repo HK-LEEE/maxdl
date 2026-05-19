@@ -152,13 +152,19 @@ def src_config(sdef, sec):
     raise SystemExit(f"ERROR: 미지원 커넥터: {c}")
 
 def dst_config(s3, pol):
-    """ingestion-map destination + seaweedfs-s3 + polaris-airbyte → 목적지 config."""
-    D = MAP["destination"]; cat = D["catalog"]; s = D["s3"]
+    """seaweedfs-s3 시크릿(=secrets.env SSOT) + ingestion-map.catalog +
+    polaris-airbyte → 목적지 config. endpoint/bucket 은 시크릿 단일출처
+    (ingestion-map.destination.s3 의 endpoint/bucket 은 비권위·정보용 —
+    개발/운영 전환은 secrets.env 값 교체만)."""
+    D = MAP["destination"]; cat = D["catalog"]
     cu = cat["server_uri"].rstrip("/")
-    return {"s3_endpoint": s["endpoint"], "access_key_id": s3["accessKey"],
-            "secret_access_key": s3["secretKey"], "s3_bucket_name": s["bucket"],
+    bucket = s3["warehouseBucket"]
+    return {"s3_endpoint": s3["endpoint"], "access_key_id": s3["accessKey"],
+            "secret_access_key": s3["secretKey"], "s3_bucket_name": bucket,
+            # region 은 Airbyte 커넥터 AWS enum 제약상 더미(SeaweedFS/외부S3
+            # 무시) — 의도된 고정값(계획서 §5단계). SSOT 대상 아님.
             "s3_bucket_region": "us-east-1", "main_branch_name": "main",
-            "warehouse_location": f"s3://{s['bucket']}/{cat['warehouse']}",
+            "warehouse_location": f"s3://{bucket}/{cat['warehouse']}",
             "catalog_type": {"catalog_type": "POLARIS", "scope": "PRINCIPAL_ROLE:ALL",
                 "server_uri": cu, "oauth2_server_uri": f"{cu}/v1/oauth/tokens",
                 "catalog_name": cat["warehouse"], "namespace": cat["warehouse"],
