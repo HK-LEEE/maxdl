@@ -33,3 +33,6 @@ dbt/**/.user.yml
 
 # 영속 PV 폴더(레포 내부 기본값) — DB 데이터·비밀, 절대 커밋 금지
 .maxdl-pv/
+
+# Trino 성능 튜닝 적용 시 운영자가 만드는 원본 백업(롤백용, 커밋 금지)
+charts/trino/values.yaml.orig

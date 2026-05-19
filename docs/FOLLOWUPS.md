@@ -323,6 +323,16 @@ secrets-spec+ingestion-map+SOURCES) 분리. **폐쇄망 완전 자족화**:
 불요). 기존 `ADD_NEW_DATABASE.md`(깊은 레퍼런스)의 stale "이미지
 재빌드" 2곳 정정 + 상호 포인터로 모순 제거.
 
+### 3.0g 성능 — Trino 튜닝(비활성 사이드카) — ✅ 제안 완료(미적용)
+
+`docs/performance.md` + `charts/trino/values.yaml_bak`. 병목 분석
+(멀티노드는 4순위 — 1차 원인은 단일 노드 Trino 자원 기아 + 차트 기본
+heap 8G > 기존 limit 4/6Gi OOM 버그). 튜닝본을 **helmfile 미참조
+사이드카**로 커밋(머지해도 무적용 — 안전). 적용/검증/롤백 절차는
+performance.md §3(운영자 수동: values.yaml 교체 → `helmfile -l
+name=trino sync` → 검증). 노드 24vCPU/90GiB 실측 기반, 동거
+워크로드 보호 봉투. 미적용 — 사용자가 원할 때 적용.
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
