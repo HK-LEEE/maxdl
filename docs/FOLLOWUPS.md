@@ -346,6 +346,24 @@ YAML/bash 문법·dbt-gen 드리프트0·소비자 하드코딩0·dev 기본값 
 시크릿 스키마(secrets-spec)는 기존부터 endpoint/region/warehouseBucket
 보유 → 재봉인 불요(값 교체 시에만). 미적용(사용자 배포 시점).
 
+### 3.0j 소스별 차등 주기 + Asia/Seoul 타임존 — ✅ 완료(미적용)
+
+코드/문서 반영:
+- `config/ingestion-map.yaml` sources.<>.schedule 필수 추가(SSOT,
+  현재 4소스 모두 `@daily` 명시)
+- `dags/maxdl_factory.py` ingestion-map 에서 SOURCES·SCHEDULES 로드
+  (fallback 없음, 누락 시 즉시 실패), `pendulum` tz-인지 start_date
+  (Asia/Seoul)
+- `scripts/airflow-artifact-publish.sh` tar 에 `config/ingestion-map.yaml`
+  포함(DAG 런타임 SSOT 접근)
+- `charts/airflow/values.yaml` `AIRFLOW__CORE__DEFAULT_TIMEZONE=Asia/Seoul`
+- `docs/SCHEDULING.md` 갱신: §1 SSOT=ingestion-map, §3 KST 코드화,
+  §5 차등 주기 지원, §6 적용 절차(아티팩트/차트 분리)
+검증: YAML 파싱·`py_compile`·SSOT 로드 시뮬·`bash -n`·dbt-gen `--check`
+드리프트0·helmfile build OK. **미적용**(사용자 시점):
+운영 첫 적용 = `helmfile -l name=airflow sync` 1회(타임존 반영) +
+이후 schedule 수정 = ingestion-map 편집 → artifact 재발행 → rollout.
+
 ### 3.0i 적재 주기(스케줄) 가이드 — ✅ 완료
 
 `docs/SCHEDULING.md` — 주기 = Airflow DAG `schedule`(Airbyte 아님,

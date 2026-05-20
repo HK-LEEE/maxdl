@@ -51,6 +51,10 @@ env:
     value: "1"
   - name: AIRFLOW__CORE__PARALLELISM
     value: "8"
+  # 한국 운영 표준 타임존(KST). @daily=00:00 KST 등 cron 을 KST 로 해석.
+  # docs/SCHEDULING.md §3 — 미설정 시 UTC 기본의 09:00 KST 오해 방지.
+  - name: AIRFLOW__CORE__DEFAULT_TIMEZONE
+    value: "Asia/Seoul"
   # 아티팩트에서 온 dbt/DAG 경로(이미지 ENV 와 동일, 명시 보강)
   - name: AIRFLOW__CORE__DAGS_FOLDER
     value: "/opt/airflow/artifact/dags"

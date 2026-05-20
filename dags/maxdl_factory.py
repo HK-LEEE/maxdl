@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import datetime
+from pathlib import Path
+
+import yaml
+import pendulum                  # Airflow 번들(타임존-인지 datetime 표준)
 
 from airflow.sdk import DAG
 from airflow.sdk import Asset
@@ -25,9 +28,27 @@ from cosmos.constants import LoadMode, ExecutionMode
 DBT_PROJECT = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/dbt/maxdl_transform")
 MANIFEST = os.environ.get("DBT_MANIFEST", f"{DBT_PROJECT}/target/manifest.json")
 
-SOURCES = ("maxplatform", "pfms", "maxapex", "maxtdoracle")
+# SSOT: 소스 목록·주기는 config/ingestion-map.yaml 단일 출처에서 로드.
+# 경로는 dev(REPO/config) / pod(/opt/airflow/artifact/config) 모두 동일하게
+# dags/ 의 부모 + config/ 로 해석됨(아티팩트 tar 에 config/ 포함).
+# 원칙: fallback 없음 — 누락 시 즉시 실패(주기 SSOT 강제).
+_INGESTION_MAP_PATH = Path(__file__).resolve().parent.parent / "config" / "ingestion-map.yaml"
+_MAP = yaml.safe_load(open(_INGESTION_MAP_PATH))
+SOURCES = tuple(_MAP["sources"].keys())
+SCHEDULES = {}
+for _s, _sdef in _MAP["sources"].items():
+    _sch = _sdef.get("schedule")
+    if _sch is None:
+        raise RuntimeError(
+            f"ingestion-map.yaml: sources.{_s}.schedule 누락 — "
+            "주기는 필수(fallback 없음). docs/SCHEDULING.md 참고.")
+    SCHEDULES[_s] = _sch
+
 BRONZE_READY = {s: Asset(f"maxdl://bronze/{s}") for s in SOURCES}
 DEFAULT_ARGS = {"owner": "maxdl", "retries": 1}
+# tz-인지 start_date(Asia/Seoul). Airflow chart DEFAULT_TIMEZONE=Asia/Seoul
+# 와 짝(09:00 KST=00:00 UTC 의도 사고 방지 — docs/SCHEDULING.md §3).
+START_DATE = pendulum.datetime(2026, 1, 1, tz="Asia/Seoul")
 
 # dbt-trino: Cosmos profile 은 프로젝트의 profiles.yml(env_var) 재사용
 PROFILE = ProfileConfig(
@@ -67,11 +88,12 @@ def _airbyte_sync(connection_id: str, **_):
 
 
 def build_ingest_dag(source: str) -> DAG:
-    """소스 1개: Airbyte 동기화 → Cosmos dbt(staging+silver, 해당 소스)."""
+    """소스 1개: Airbyte 동기화 → Cosmos dbt(staging+silver, 해당 소스).
+    schedule 은 ingestion-map.yaml 의 sources.<source>.schedule(SSOT)."""
     with DAG(
         dag_id=f"ingest_{source}",
         description=f"{source}: Airbyte→Bronze → dbt staging/silver",
-        schedule="@daily", start_date=datetime(2026, 1, 1),
+        schedule=SCHEDULES[source], start_date=START_DATE,
         catchup=False, default_args=DEFAULT_ARGS,
         tags=["maxdl", "ingest", source],
     ) as dag:
@@ -102,7 +124,7 @@ def build_transform_dag() -> DAG:
         dag_id="transform_gold",
         description="Silver → Gold 마트 (Cosmos marts)",
         schedule=list(BRONZE_READY.values()),
-        start_date=datetime(2026, 1, 1),
+        start_date=START_DATE,
         catchup=False, default_args=DEFAULT_ARGS,
         tags=["maxdl", "transform", "gold"],
     ) as dag:
