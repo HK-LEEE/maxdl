@@ -346,6 +346,25 @@ YAML/bash 문법·dbt-gen 드리프트0·소비자 하드코딩0·dev 기본값 
 시크릿 스키마(secrets-spec)는 기존부터 endpoint/region/warehouseBucket
 보유 → 재봉인 불요(값 교체 시에만). 미적용(사용자 배포 시점).
 
+### 3.0k Airflow 로그 영속(S3 원격 로깅) — ✅ 완료(미적용)
+
+5/19·5/20 ingest DAG 실패 진단 시 태스크 로그가 emptyDir 라 사라져
+근본원인 추적 불가였음. 영속화 방식: **SeaweedFS S3 원격 로깅**(RWX
+PVC 미지원 k3d/Longhorn 미사용 환경 회피, dev/prod 동일 동작).
+
+변경: `charts/airflow/values.yaml` env 에 추가
+- S3_ACCESS_KEY/SECRET_KEY/ENDPOINT/REGION/WAREHOUSE_BUCKET (시크릿서)
+- AIRFLOW__LOGGING__REMOTE_LOGGING=True
+- AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER=s3://$(WAREHOUSE)/airflow-logs
+- AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID=aws_default
+- AIRFLOW_CONN_AWS_DEFAULT JSON (k8s $(VAR) 치환으로 SSOT 시크릿 재사용)
+
+이미지 maxdl/airflow:fu3 에 provider-amazon 9.25.0 + boto3 1.42.84
+설치 확인됨 → 추가 빌드 불요. 경로 = `maxdl-warehouse/airflow-logs/`
+전용 prefix(운영 침범 없음). 검증: YAML 파싱, helmfile build OK, 평문
+시크릿 미커밋. 미적용 — `helmfile -l name=airflow sync` 후 다음 09:00
+KST 실행부터 실패 시 stacktrace 보존 → 정확한 원인 진단 가능.
+
 ### 3.0j 소스별 차등 주기 + Asia/Seoul 타임존 — ✅ 완료(미적용)
 
 코드/문서 반영:
