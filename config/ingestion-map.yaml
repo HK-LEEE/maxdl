@@ -29,6 +29,7 @@ sources:
     connector: source-postgres
     secret: src-db-maxplatform
     replicationMethod: standard
+    schedule: "@daily"               # ★ Airflow DAG 주기(SSOT) — docs/SCHEDULING.md
     bronzeNamespace: maxplatform
     tables:   # 104 tables
       - { name: "public.authorization_codes", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
@@ -139,6 +140,7 @@ sources:
     connector: source-mssql
     secret: src-db-pfms
     replicationMethod: standard
+    schedule: "@daily"               # ★ Airflow DAG 주기(SSOT)
     bronzeNamespace: pfms
     tables:   # 4 tables
       - { name: "dbo.PBATPRCDAT", mode: replica }
@@ -149,6 +151,7 @@ sources:
     connector: source-postgres
     secret: src-db-maxapex
     replicationMethod: standard
+    schedule: "@daily"               # ★ Airflow DAG 주기(SSOT)
     bronzeNamespace: maxapex
     tables:   # 74 tables
       - { name: "public.api_key_logs", mode: merge, cursorField: "created_at", primaryKey: ["id"] }
@@ -229,6 +232,7 @@ sources:
     connector: source-oracle
     secret: src-db-maxtdoracle
     replicationMethod: standard
+    schedule: "@daily"               # ★ Airflow DAG 주기(SSOT)
     bronzeNamespace: maxtdoracle
     tables:   # 1 tables
       - { name: "MAXTDORACLE.PRODUCTION_LOG", mode: replica }

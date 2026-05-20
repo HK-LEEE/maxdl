@@ -80,7 +80,8 @@ docker run --rm --network=host --user "$(id -u):0" \
 # 2) tar (dbt 프로젝트+target + dags)
 TAR="$(mktemp --suffix=.tgz)"; trap 'rm -f "$TAR"' EXIT
 # dbt_packages 포함(폐쇄망 런타임 자족 — deps 불필요). target 도 포함(manifest).
-tar czf "$TAR" -C "$REPO_ROOT" dbt/maxdl_transform dags
+# ingestion-map.yaml 포함 — DAG 팩토리가 소스별 schedule(SSOT) 로드.
+tar czf "$TAR" -C "$REPO_ROOT" dbt/maxdl_transform dags config/ingestion-map.yaml
 echo "= 패키징: $(du -h "$TAR" | cut -f1)"
 
 # 3) 업로드 — 버전 핀 + latest 별칭(차트 기본값 동작용)

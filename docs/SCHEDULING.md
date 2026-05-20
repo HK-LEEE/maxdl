@@ -8,21 +8,24 @@
 
 ---
 
-## 1. 어디서 정하나
+## 1. 어디서 정하나 (SSOT = ingestion-map.yaml)
 
-`dags/maxdl_factory.py` 의 `build_ingest_dag()` → `schedule=` 인자.
+**소스별 schedule 은 `config/ingestion-map.yaml` 의
+`sources.<name>.schedule` 단일 출처**에서 정한다. `dags/maxdl_factory.py`
+는 모듈 로드 시 이 값을 읽어 DAG 에 주입(fallback 없음 — 누락 시 즉시
+실패).
 
-```python
-def build_ingest_dag(source: str) -> DAG:
-    with DAG(
-        dag_id=f"ingest_{source}",
-        schedule="@daily", start_date=datetime(2026, 1, 1),
-        catchup=False, default_args=DEFAULT_ARGS,
-        ...
+```yaml
+sources:
+  maxplatform:
+    schedule: "@daily"               # ← 여기서 결정
+    ...
+  pfms:
+    schedule: "0 */2 * * *"          # 예: 2시간마다 (소스별 차등 가능)
+    ...
 ```
 
-- **현재**: 4개 소스(maxplatform/pfms/maxapex/maxtdoracle) 전부
-  `@daily`(매일 1회) — **균일**.
+- **소스별 차등 가능** — 각자 다른 schedule 값 부여(아래 §5).
 - **Gold 변환 DAG 은 시간 스케줄이 아님**: `build_transform_dag()` 의
   `schedule=list(BRONZE_READY.values())` = **Dataset(Asset) 트리거**.
   4개 소스 Bronze 적재가 끝나면 자동 실행된다.
@@ -48,28 +51,18 @@ cron 5필드 = `분 시 일 월 요일`.
 
 ---
 
-## 3. ⚠ 한국 환경 주의 — 타임존 (중요)
+## 3. 타임존 (Asia/Seoul 로 설정됨)
 
-현재 `AIRFLOW__CORE__DEFAULT_TIMEZONE` **미설정 → Airflow 기본 UTC**.
-따라서:
+`charts/airflow/values.yaml` 에 **`AIRFLOW__CORE__DEFAULT_TIMEZONE=
+Asia/Seoul`** 가 코드화돼 있다. 따라서:
 
-- `@daily` = **00:00 UTC = 09:00 KST** 에 실행됨.
-- cron `"0 2 * * *"` 로 적으면 **02:00 UTC = 11:00 KST** (의도와 다름).
+- `@daily` = **00:00 KST** (매일 자정 한국시각).
+- cron `"0 2 * * *"` = **새벽 2시 KST** (의도 그대로).
+- DAG 의 `start_date` 도 tz-인지 `pendulum.datetime(2026,1,1, tz="Asia/Seoul")`.
 
-한국 기준 시각으로 운영하려면 둘 중 하나:
-
-1. **(권장)** `charts/airflow/values.yaml` 의 env 에 추가:
-   ```yaml
-   - name: AIRFLOW__CORE__DEFAULT_TIMEZONE
-     value: "Asia/Seoul"
-   ```
-   이후 모든 cron 을 **KST 로 해석**(예: `"0 2 * * *"` = 새벽 2시 KST).
-   적용은 Airflow 차트 변경이므로 `helmfile -l name=airflow sync`.
-2. 타임존을 안 바꾸고 cron 을 **UTC 로 환산**해 기입(예: 새벽 2시
-   KST → `"0 17 * * *"` = 전일 17:00 UTC).
-
-> 운영 배포 전 타임존 정책을 먼저 확정할 것. 안 그러면 "매일 새벽
-> 적재" 의도가 실제로는 업무시간(09:00 KST)에 도는 식의 사고 발생.
+⚠ **첫 적용 시점**: 차트 변경이므로 `helmfile -f helmfile.yaml -l
+name=airflow sync` 가 한 번 필요(아래 §6 절차에 포함). 적용 전엔
+Airflow 기본 UTC 이고, 적용 후부터 KST 해석.
 
 ---
 
@@ -88,44 +81,57 @@ cron 5필드 = `분 시 일 월 요일`.
 
 ---
 
-## 5. 소스별로 다른 주기를 주고 싶다면
+## 5. 소스별 차등 주기 (지원됨)
 
-**현재는 4소스 균일**(`build_ingest_dag` 가 모든 source 에 동일
-`"@daily"` 적용). 소스별 차등(예: pfms 는 1시간, maxapex 는 1일)은
-지금 구조로는 안 됨 — 팩토리 파라미터화가 필요하다(개요):
+각 소스에 다른 주기를 지정 가능. `config/ingestion-map.yaml`:
 
-- 안 A: `config/ingestion-map.yaml` 의 `sources.<name>` 에 `schedule`
-  키를 추가하고, `build_ingest_dag(source)` 가 그 값을 읽어
-  `schedule=` 에 주입(없으면 기본값 fallback 없이 명시 기본).
-- 안 B: 팩토리 내부에 `SCHEDULES = {"pfms": "@hourly", ...}` 매핑.
+```yaml
+sources:
+  maxplatform:
+    schedule: "@daily"               # 일 1회 (설정성 위주)
+    ...
+  pfms:
+    schedule: "0 */2 * * *"          # 2시간마다 (트랜잭션성 자주)
+    ...
+  maxapex:
+    schedule: "0 3 * * *"            # 매일 03:00 KST
+    ...
+  maxtdoracle:
+    schedule: "0 */6 * * *"          # 6시간마다
+    ...
+```
 
-SSOT 일관성상 안 A(ingestion-map)가 권장. 이 리팩터가 필요하면 별도
-요청 — 본 문서는 "현재 구조에서 주기 정하는 법"이 범위.
+원칙: 각 소스에 **반드시 `schedule` 선언**(누락 시 DAG 파싱 즉시 실패
+— fallback 없음). §4 의 모드 ↔ 주기 상호작용을 고려해 정한다.
 
 ---
 
 ## 6. 변경 적용 절차 (이미지 재빌드 0 · 폐쇄망 무접속)
 
-`schedule` 은 **DAG 아티팩트**에 있다(커스텀 이미지에 미동봉 —
-아티팩트 패턴). 따라서:
+주기 변경(schedule) 은 **DAG 아티팩트 + ingestion-map** 에 있다(둘
+다 아티팩트 tar 에 포함). 타임존은 차트(env). 변경 종류별로:
 
+### 6-1. 소스별 주기만 바꾸는 경우 (가장 흔함)
 ```bash
-# 1) 주기 수정
-#    dags/maxdl_factory.py 의 build_ingest_dag schedule= (전 소스 공통)
-#    (또는 §5 구조면 config/ingestion-map.yaml 의 소스별 schedule)
-
-# 2) 아티팩트 재발행 (vendored dbt_packages → dbt deps 없이, 무접속)
-scripts/airflow-artifact-publish.sh
-
-# 3) Airflow 가 새 아티팩트 refetch
+# config/ingestion-map.yaml 의 sources.<name>.schedule 수정 후
+scripts/airflow-artifact-publish.sh          # 아티팩트 재발행(폐쇄망 무접속)
 kubectl -n maxdl-orchestrate rollout restart \
-  deploy/airflow-scheduler deploy/airflow-dag-processor
+  deploy/airflow-scheduler deploy/airflow-dag-processor   # 새 아티팩트 refetch
 #   또는: helmfile -f helmfile.yaml -l name=airflow sync
-#         (airflow presync 가 dbt-gen + 아티팩트 재발행까지 수행)
+#         (presync 가 dbt-gen + 아티팩트 재발행까지 수행)
+```
+
+### 6-2. 타임존을 바꾸는 경우 (초기 1회)
+```bash
+# charts/airflow/values.yaml AIRFLOW__CORE__DEFAULT_TIMEZONE 수정 후
+helmfile -f helmfile.yaml -l name=airflow sync
+#   → Airflow pod 가 새 env 로 재기동, 이후 모든 cron 을 그 타임존으로 해석
 ```
 
 > 폐쇄망: `airflow-artifact-publish.sh` 는 vendored `dbt_packages/`
 > 덕에 인터넷 없이 동작(`dbt deps` 자동 스킵). 이미지 재빌드 불필요.
+> 아티팩트 tar 에 **`config/ingestion-map.yaml` 자동 포함**되므로
+> DAG 팩토리가 런타임에 소스별 schedule 을 SSOT 에서 읽는다.
 > Airbyte 커넥션은 `scheduleType: "manual"` 그대로 — 건드리지 말 것
 > (주기 권위는 Airflow DAG).
 
@@ -151,9 +157,10 @@ kubectl -n maxdl-orchestrate exec deploy/airflow-scheduler -- \
 
 ## 8. 정직한 잔여·주의
 
-- **타임존 미설정(UTC)** 이 가장 흔한 사고 지점 — 운영 전 §3 확정.
-- 소스별 차등 주기는 **현재 미지원**(§5, 균일 `@daily`). 필요 시
-  팩토리 파라미터화(별도 작업).
+- **타임존 = Asia/Seoul 코드화 완료**. 첫 적용 시 `helmfile -l
+  name=airflow sync` 필요(§6-2). 적용 전엔 Airflow 기본 UTC.
+- 소스별 차등 주기 **지원됨**(§5). 단 4 소스 전부 `schedule` 필수
+  — 누락 시 DAG 파싱 즉시 실패(fallback 없음).
 - `catchup=False` — 과거 미실행분 몰아치기 없음(의도). 과거 보정이
   필요하면 별도 backfill 전략 필요(자동 아님).
 - 고빈도 + replica 대형 테이블 = 소스 DB/S3/Trino 부하. 주기는
