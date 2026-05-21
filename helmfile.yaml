@@ -92,7 +92,24 @@ releases:
       - events: [presync]
         showlogs: true
         command: sh
-        args: ["-c", "kubectl -n maxdl-catalog rollout status statefulset/polaris-postgresql --timeout=180s; kubectl apply -f deploy/k8s/polaris/bootstrap-job.yaml; kubectl -n maxdl-catalog wait --for=condition=complete job/polaris-bootstrap --timeout=300s"]
+        # 멱등 가드: Polaris admin-tool 의 bootstrap CLI 는 비멱등(이미
+        # realm 있으면 "Bootstrap encountered errors") → 라이브에서 sync
+        # 시 무조건 fail 하던 잠재 버그 해소.
+        # 판정 기준: polaris Deployment 존재 = 과거 1회 이상 부트스트랩
+        # 완료 (Job 객체 보존 여부와 무관 — Job 이 정리·삭제됐어도 안전).
+        # 첫 클린 설치 = polaris deploy 없음 → bootstrap Job 실행 분기.
+        args:
+          - "-c"
+          - |
+            set -e
+            kubectl -n maxdl-catalog rollout status statefulset/polaris-postgresql --timeout=180s
+            if kubectl -n maxdl-catalog get deploy polaris >/dev/null 2>&1; then
+              echo '= polaris Deployment 존재 — 이미 부트스트랩됨(멱등 skip)'
+            else
+              echo '= polaris 첫 부트스트랩 — bootstrap Job 실행'
+              kubectl apply -f deploy/k8s/polaris/bootstrap-job.yaml
+              kubectl -n maxdl-catalog wait --for=condition=complete job/polaris-bootstrap --timeout=300s
+            fi
       - events: [postsync]
         showlogs: true
         command: sh
