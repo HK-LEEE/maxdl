@@ -393,6 +393,18 @@ Dataset 트리거(자동). schedule 형식표·**한국 타임존 주의(UTC 기
 절차(아티팩트 재발행, 이미지 재빌드 0, 폐쇄망 무접속)·검증·잔여.
 코드 변경 없음(문서만).
 
+### 3.0l Iceberg 유지보수 DAG (maintain_iceberg) — ✅ 완료(미적용)
+
+`dags/maxdl_maintenance.py` + `config/maintenance.yaml`(SSOT,
+schedule/retention/layers) + `docs/MAINTENANCE.md`. Trino 절차 4단계
+(optimize → optimize_manifests → expire_snapshots → remove_orphan_files)
+를 동적 발견 테이블 전수에 직렬 적용. 테이블별 try/except 격리,
+주기 KST(매주 일요일 04:00, SSOT 로 변경 가능), 보존 7d(in-flight
+보호). svc-dbt 인증·기존 TRINO_* env 재사용. artifact tar 에
+maintenance.yaml 자동 포함. 검증: YAML/py_compile/helmfile build/
+dbt-gen 드리프트0. 미적용 — 첫 실행은 maxapex 1소스 수동 트라이얼
+권장(docs/MAINTENANCE.md §4).
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시

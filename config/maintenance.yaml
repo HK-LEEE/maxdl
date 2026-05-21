@@ -1,0 +1,29 @@
+# =============================================================================
+# maxdl Iceberg 유지보수 SSOT (FU-?)
+# -----------------------------------------------------------------------------
+# DAG: dags/maxdl_maintenance.py 가 모듈 로드 시 이 파일을 읽어 schedule·
+#   retention·layers 를 주입(fallback 없음 — 누락 시 즉시 실패).
+# 적용: 값 수정 → scripts/airflow-artifact-publish.sh → Airflow rollout.
+#   (airflow-artifact-publish.sh 가 본 파일을 tar 에 포함 — SSOT 자족.)
+# 권위: 운영 전환·테이블 추가에 무관(소스 추가 시 DAG 자동 발견).
+# =============================================================================
+
+# Airflow DAG 주기 (KST — chart DEFAULT_TIMEZONE=Asia/Seoul).
+# 형식·예시: docs/SCHEDULING.md §2 동일.
+# 권장: 매주 일요일 04:00 KST (저활동·동기화 후).
+schedule: "0 4 * * 0"
+
+# Iceberg 보존 기간 — 두 값 모두 "Nd" 형식 권장(d=day).
+# - snapshots: expire_snapshots 보존 = time-travel 한계가 됨(감사 요건 길게).
+# - orphan:    remove_orphan_files 보존 = 진행 중 쓰기 보호(매우 보수적 유지).
+# 절대 1d 미만 금지(in-flight 쓰기를 삭제할 위험).
+retention:
+  snapshots: "7d"
+  orphan: "7d"
+
+# 대상 Iceberg 카탈로그(=Polaris warehouse). information_schema.tables 에서
+# 동적 발견 — 새 테이블 추가에 DAG 변경 0.
+layers:
+  - iceberg_bronze
+  - iceberg_silver
+  - iceberg_gold
