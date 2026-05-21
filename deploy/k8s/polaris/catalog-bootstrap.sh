@@ -156,6 +156,11 @@ for P in TABLE_READ_DATA TABLE_LIST TABLE_READ_PROPERTIES NAMESPACE_LIST NAMESPA
   grant bronze cr-bronze-ro "$P"
 done
 bind pr-trino bronze cr-bronze-ro
+# 유지보수 DAG(maintain_iceberg: compaction/expire_snapshots/orphan) 가
+# bronze 도 청소하려면 RW 필요 → cr-bronze-rw 도 함께 바인드(read role
+# 과 병존, Polaris grants 합산). 사용자별 차단은 Trino file-based ACL
+# 이 담당(svc-dbt 외 bronze INSERT/DELETE 불가). docs/MAINTENANCE.md.
+bind pr-trino bronze cr-bronze-rw
 for L in silver gold; do
   ensure_cr "$L" cr-rw; grant "$L" cr-rw CATALOG_MANAGE_CONTENT; bind pr-trino "$L" cr-rw
 done
