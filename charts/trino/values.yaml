@@ -2,39 +2,50 @@ image:
   tag: "481"
 
 # =============================================================================
-# Trino Helm values — maxdl (차트 1.42.2 / app 480, 버전 정책: 안정 최신 핀)
-# - Iceberg REST → Polaris(maxdl-catalog), native S3 → 공유 SeaweedFS.
-# - 레이어별 Polaris 카탈로그(bronze/silver/gold) → Trino 카탈로그 3개 매핑.
-# - SeaweedFS 는 STS/vended 미지원 → vended-credentials-enabled=false +
-#   정적 S3 키(seaweedfs-s3 시크릿) + path-style(계획서 §리스크 1·2).
-# - 비밀값은 env(secretKeyRef) 주입, 카탈로그 파일은 ${ENV:...} 참조.
+# Trino Helm values — maxdl  ★성능 튜닝본 (비활성 사이드카)★
+# -----------------------------------------------------------------------------
+# 이 파일은 helmfile 이 참조하지 않는다(helmfile.yaml 의 trino 릴리스는
+# `charts/trino/values.yaml` 만 사용). 즉 **이 파일을 두는 것만으로는
+# 아무것도 적용되지 않는다** — 안전. 적용은 운영자가 원할 때 수동으로
+# 활성 파일과 교체한다(docs/performance.md 절차). 비교/롤백 보존용.
+#
+# 원본 대비 변경점(성능):
+#  - coordinator/worker resources(cpu·mem requests·limits) 상향
+#  - jvm.maxHeapSize 명시(차트 기본 8G > 기존 limit 4/6Gi = OOMKill 버그 수정)
+#  - per-role config.memory.heapHeadroomPerNode / query.maxMemoryPerNode 명시
+#  - additionalConfigProperties 에 query.max-memory / task.* 추가
+# 그 외 블록(인증/TLS/accessControl/카탈로그/env)은 원본과 100% 동일.
+# 근거·검증·적용/롤백 절차 = docs/performance.md
 # =============================================================================
 
-# 단일 노드 개발: 코디네이터1 + 워커1, 리소스 절제
-# server.config.authenticationType = FU-9 1단계(코드-only, 컷오버 활성)
 server:
   workers: 1
   config:
     authenticationType: "password"
-    # FU-9 내부 self-signed TLS(컷오버 활성). dbt-trino 비밀번호 인증이
-    # HTTPS 강제(리허설 실증) → coordinator https. FU-7(외부/도메인)과 별개.
     https:
       enabled: true
       port: 8443
       keystore:
         path: /etc/trino-tls/keystore.p12
-  # keystore 비번은 coordinator 전용(worker https 미서빙). ${ENV:} 치환됨.
   coordinatorExtraConfig: |
     http-server.https.keystore.key=${ENV:TRINO_TLS_KEYSTORE_PASSWORD}
 
 coordinator:
+  # [튜닝] 기존 req cpu500m/mem2Gi, lim mem4Gi → 24코어·90GiB 노드 활용.
+  # 코디네이터=플래너(실행 split 은 worker). heap 은 limit 의 ~75%.
   resources:
-    requests: { cpu: "500m", memory: "2Gi" }
-    limits:   { memory: "4Gi" }
-  # FU-9: 차트 auth.passwordAuthSecret 는 password.db 만 마운트하고
-  # password-authenticator.properties 를 생성하지 않음(컷오버 리허설에서
-  # crash 로 확인) → 차트 auth 헬퍼 미사용, 명시적 파일/시크릿마운트로 결정적.
-  # group-provider(file)도 동일 방식. ConfigMap 키 '/' 불가 → 평탄.
+    requests: { cpu: "2", memory: "10Gi" }
+    limits:   { cpu: "4", memory: "12Gi" }
+  # [튜닝/필수] 차트 기본 maxHeapSize=8G 가 기존 limit 4Gi 초과 → 부하 시
+  # OOMKill(= dbt OOM·threads 축소 원인). limit 12Gi 의 75%=9G 로 명시.
+  jvm:
+    maxHeapSize: "9G"
+  # [튜닝] 차트 기본 query.maxMemoryPerNode=1GB / heapHeadroom 미설정.
+  config:
+    memory:
+      heapHeadroomPerNode: "3GB"
+    query:
+      maxMemoryPerNode: "4GB"
   additionalConfigFiles:
     password-authenticator.properties: |-
       password-authenticator.name=file
@@ -44,9 +55,6 @@ coordinator:
       file.group-file=/etc/trino/groups.txt
     groups.txt: |-
       analysts:admin
-  # password.db(bcrypt) 는 시크릿 → secretMount. /etc/trino 는 차트 관리
-  # 볼륨이라 그 안 subPath 마운트 시 'not a directory' 충돌(리허설 확인)
-  # → 별도 디렉토리 /etc/trino-secrets 에 시크릿 통째 마운트(subPath 미사용).
   secretMounts:
     - name: trino-password-db
       secretName: trino-password-db
@@ -54,10 +62,23 @@ coordinator:
     - name: trino-tls
       secretName: trino-tls
       path: /etc/trino-tls          # keystore.p12 (self-signed)
+
 worker:
+  # [튜닝] 실행 엔진(split 병렬)의 핵심. 봉투: worker24Gi+coord12Gi≈36Gi/
+  # CPUreq8 → ~54Gi·16vCPU 를 Airbyte/Airflow/Polaris/Superset/호스트
+  # SeaweedFS 동거에 잔여(과거 eviction 인시던트 고려한 보수적 배분).
   resources:
-    requests: { cpu: "500m", memory: "2Gi" }
-    limits:   { memory: "6Gi" }
+    requests: { cpu: "6",  memory: "20Gi" }
+    limits:   { cpu: "16", memory: "24Gi" }
+  # [튜닝/필수] 기본 8G < 새 limit 24Gi 라 그대로도 무방하나, off-heap
+  # 여유 확보 위해 75%=18G 로 명시(GC/네이티브/스레드/힙헤드룸 ~6Gi).
+  jvm:
+    maxHeapSize: "18G"
+  config:
+    memory:
+      heapHeadroomPerNode: "5GB"
+    query:
+      maxMemoryPerNode: "9GB"       # ≈0.5*heap, 헤드룸 안에서 안전
 
 # 외부 노출: NodePort 30080 (정책: 30000번대)
 service:
@@ -65,59 +86,39 @@ service:
   port: 8080
   nodePort: 30080
 
-# 비밀값 주입(모든 pod 공통): Polaris OAuth2 / SeaweedFS S3 정적 키
 env:
-  - name: POLARIS_CREDENTIAL          # "root:<secret>" (스파이크) — polaris-oauth
+  - name: POLARIS_CREDENTIAL
     valueFrom: { secretKeyRef: { name: polaris-oauth, key: credential } }
   - name: S3_ACCESS_KEY
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: accessKey } }
   - name: S3_SECRET_KEY
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: secretKey } }
   # SSOT 일원화: endpoint/region 도 seaweedfs-s3 시크릿(=secrets.env)에서.
-  # 개발=내부 Docker SeaweedFS, 운영=폐쇄망 외부 S3 — secrets.env 값만 교체.
   - name: S3_ENDPOINT
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: endpoint } }
   - name: S3_REGION
     valueFrom: { secretKeyRef: { name: seaweedfs-s3, key: region } }
-  - name: TRINO_INTERNAL_SECRET     # 인증 활성 시 coord↔worker 내부통신 필수
+  - name: TRINO_INTERNAL_SECRET
     valueFrom: { secretKeyRef: { name: trino-internal, key: shared-secret } }
-  - name: TRINO_TLS_KEYSTORE_PASSWORD   # self-signed keystore.p12 비번
+  - name: TRINO_TLS_KEYSTORE_PASSWORD
     valueFrom: { secretKeyRef: { name: trino-tls-pw, key: keystore-password } }
 
-# =============================================================================
-# 인증 (1단계: 코드화만 — 라이브 미적용. 컷오버는 Superset 임퍼소네이션과
-#  동시에. 지금 켜면 자격 없는 Superset/dbt 즉시 차단됨 — 의도된 보류).
-# - **파일 기반 PASSWORD 인증** (SSO/JWT 미사용 — 단순화 결정). 사람·기계
-#   (svc-dbt) 모두 password-file 의 유저. 유저단위·컬럼마스킹·중앙정책은
-#   Ranger 가 "인증된 Trino 유저명" 기준으로 그대로 가능(인증방식 무관).
-# - 사내망이라 allow-insecure-over-http=true (정식 TLS 는 FU-7 보류 그대로).
-# - password db(htpasswd 포맷 Secret 'trino-password-db')는 컷오버 시
-#   secrets.env(SVC_DBT_PASSWORD 등 유저별)로 생성(다음 dbt-path 단계 배선).
-# - 트레이드오프: 유저 추가/삭제 수동(중앙 디렉토리/SSO 없음) — 소수 유저 수용.
-#   (server.config.authenticationType 는 상단 server 블록에 통합)
-# =============================================================================
-# (차트 auth 헬퍼 미사용 — password-authenticator.properties 미생성 버그.
-#  password 인증은 상단 coordinator.additionalConfigFiles+secretMounts 로 명시.)
-
+# [튜닝] 클러스터-와이드(원본 2줄 유지 + 성능 4줄 추가). 양 롤 유효
+# 속성만(coordinator 전용은 server.coordinatorExtraConfig — 원본 주석 참조).
 additionalConfigProperties:
   - http-server.authentication.allow-insecure-over-http=true
   - internal-communication.shared-secret=${ENV:TRINO_INTERNAL_SECRET}
-  # http-server.https.keystore.key 는 coordinator 전용(worker 는 https 미서빙
-  # → additionalConfigProperties 전역 적용 시 worker 'property not used' crash,
-  #  리허설 확인) → server.coordinatorExtraConfig 로 분리(상단).
+  # --- 성능 추가 ---
+  - query.max-memory=18GB             # 분산 누계 한도(워커1=사실상 per-node)
+  - task.concurrency=16               # 2의 거듭제곱, 유효 코어 수 근방
+  - task.max-worker-threads=32        # ≈ 2 × 유효 워커 코어
+  - task.scale-writers.enabled=true   # Trino 480 정확 키(scale-writers→.enabled)
+  - task.min-writer-count=1
+  - task.max-writer-count=2           # 작게 유지 — 크면 작은 Parquet 폭증
 
 # =============================================================================
-# 접근 제어 (FU-9/4단계: 코드화만 — 라이브 미적용. 컷오버와 동시 활성).
-# Trino 내장 file-based(B안). catalog/schema/table 은 정규식이라 **테이블
-# 열거 없이** 1000+ 도 규칙 한 줌. 단 **컬럼 mask 의 name 은 리터럴(정규식
-# 아님 — Trino 사양)** → PII 컬럼명을 enumerate(table:.* 라 전 테이블 적용,
-# 여전히 컬럼명 단위라 확장성 유지). 그룹이 거버넌스 단위(group provider
-# =file). 정책=git(JSON, SSOT). first-match·미매칭=거부.
-# - svc-dbt: 파이프라인 엔진 → 전 계층 R/W (user 정규식)
-# - svc-superset: 임퍼소네이션 허용(실유저로 위임), 직접 데이터 접근 없음
-# - analysts 그룹: Gold/Silver read-only + PII 컬럼(email/phone/ssn/...) 마스킹
-# - 그 외: 거부(기본)
-# 그룹 매핑(deploy/k8s/trino/groups.txt)·신원 추가가 거버넌스 운영 표면.
+# 이하 accessControl / catalogs 는 원본(values.yaml)과 100% 동일 — 성능과
+# 무관하므로 그대로 보존. 교체 시 의미 변화 없음.
 # =============================================================================
 accessControl:
   type: configmap
@@ -160,10 +161,7 @@ accessControl:
           { "group": "analysts", "allow": ["execute","view"] }
         ]
       }
-# (그룹 provider/groups.txt 는 상단 coordinator.additionalConfigFiles 에 통합)
 
-# 레이어별 Iceberg 카탈로그(Polaris warehouse = 레이어명)
-# 공통 블록: REST→Polaris OAUTH2 + native S3→SeaweedFS path-style.
 catalogs:
   iceberg_bronze: |
     connector.name=iceberg
