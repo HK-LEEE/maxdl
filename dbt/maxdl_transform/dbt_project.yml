@@ -10,6 +10,10 @@ version: "1.0.0"
 config-version: 2
 profile: maxdl_transform
 
+# 폐쇄망: dbt 익명 사용 통계(stats.getdbt.com) 송신 차단 — 외부 호출 0.
+config:
+  send_anonymous_usage_stats: false
+
 model-paths: ["models"]
 macro-paths: ["macros"]
 seed-paths: ["seeds"]

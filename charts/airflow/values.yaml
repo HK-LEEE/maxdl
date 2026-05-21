@@ -64,6 +64,18 @@ env:
     value: "/opt/airflow/artifact/dbt/maxdl_transform/target/manifest.json"
 
   # =========================================================================
+  # 폐쇄망: 외부 분석/텔레메트리 송신 차단 (소스 전수 감사 후 식별된 항목).
+  # - Cosmos: settings.enable_telemetry → astronomer.gateway.scarf.sh 송신
+  # - DO_NOT_TRACK / SCARF_NO_ANALYTICS 는 다수 OSS 가 공통 honour (belt&suspenders)
+  # =========================================================================
+  - name: AIRFLOW__COSMOS__ENABLE_TELEMETRY
+    value: "False"
+  - name: DO_NOT_TRACK
+    value: "1"
+  - name: SCARF_NO_ANALYTICS
+    value: "true"
+
+  # =========================================================================
   # S3 원격 로깅 (Airflow→SeaweedFS) — KubernetesExecutor 워커 pod 종료
   # 후에도 태스크 로그 보존(영속). RWX PVC 미지원(k3d)·실 k3s 동일 동작.
   # 차트 env 스키마가 valueFrom 미허용 → 자격은 아래 extraEnvFrom 의
