@@ -11,7 +11,8 @@ config-version: 2
 profile: maxdl_transform
 
 # 폐쇄망: dbt 익명 사용 통계(stats.getdbt.com) 송신 차단 — 외부 호출 0.
-config:
+# dbt-core 1.x 의 프로젝트 레벨 옵션 키는 `flags`(NOT `config`).
+flags:
   send_anonymous_usage_stats: false
 
 model-paths: ["models"]
