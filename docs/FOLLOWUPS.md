@@ -405,6 +405,17 @@ maintenance.yaml 자동 포함. 검증: YAML/py_compile/helmfile build/
 dbt-gen 드리프트0. 미적용 — 첫 실행은 maxapex 1소스 수동 트라이얼
 권장(docs/MAINTENANCE.md §4).
 
+### 3.0m Trino 사용자/그룹 운영 runbook — ✅ 완료(코드 변경 0)
+
+`docs/USERS.md` — 휴먼 사용자 추가/제거/비번 회전/그룹 변경 절차.
+SSOT: secrets.env(평문)→`trino-password-db` SealedSecret + `charts/
+trino/values.yaml` 의 `groups.txt`. ACL 룰은 그룹 단위라 사용자 추가
+시 룰 무변경. dev drill (qa_drill_user 추가→silver 통과·bronze 거부
+→ 제거→인증 401)로 §1·§2 절차 정확성 라이브 검증. 즉시성 필요 시
+`rollout restart deploy/trino-coordinator`. 평문 비번은 secrets.env
+한 곳, shred 또는 안전 보관. 중앙 디렉토리/SSO 미사용(소수 유저
+수용 결정 — 계획서 §7 트레이드오프).
+
 ### 3.1 FU-7 노출(Ingress/TLS) — 사용자 보류
 
 NodePort(30000번대) → Ingress/TLS 운영 노출. 사용자가 추후 직접 요청 시
