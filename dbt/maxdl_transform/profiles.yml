@@ -24,4 +24,6 @@ maxdl_transform:
       cert: "{{ env_var('TRINO_CERT', '') }}"
       catalog: "{{ env_var('TRINO_CATALOG', 'iceberg_silver') }}"
       schema: "{{ env_var('TRINO_SCHEMA', 'silver') }}"
-      threads: 4
+      threads: 6           # Trino perf 튜닝(rev 16, heap 18G/16cpu) 후 상향.
+                           # 1 thread = 1 동시 Trino 쿼리(per-node 9GB 안 다중 수용).
+                           # 안정 확인 후 8 로 추가 상향 검토.
