@@ -106,7 +106,12 @@ def build_ingest_dag(source: str) -> DAG:
         )
         dbt = DbtTaskGroup(
             group_id=f"dbt_{source}",
-            project_config=ProjectConfig(DBT_PROJECT, manifest_path=MANIFEST),
+            # install_dbt_deps=False: Cosmos 가 모델당 임시 project_dir(/tmp/tmpXXX)
+            # 만들 때 vendored dbt_packages 를 symlink 포함시켜 자동 dbt deps
+            # (hub.getdbt.com 접근) 호출을 차단. 폐쇄망/SSL 차단 환경에서 필수.
+            # (Cosmos 1.14: install_deps=False+copy_dbt_packages=False →
+            #  ignore_dbt_packages=False → dbt_packages symlink 생성)
+            project_config=ProjectConfig(DBT_PROJECT, manifest_path=MANIFEST, install_dbt_deps=False),
             profile_config=PROFILE, execution_config=EXEC,
             render_config=RenderConfig(
                 load_method=LoadMode.DBT_MANIFEST,
@@ -130,7 +135,12 @@ def build_transform_dag() -> DAG:
     ) as dag:
         DbtTaskGroup(
             group_id="dbt_marts",
-            project_config=ProjectConfig(DBT_PROJECT, manifest_path=MANIFEST),
+            # install_dbt_deps=False: Cosmos 가 모델당 임시 project_dir(/tmp/tmpXXX)
+            # 만들 때 vendored dbt_packages 를 symlink 포함시켜 자동 dbt deps
+            # (hub.getdbt.com 접근) 호출을 차단. 폐쇄망/SSL 차단 환경에서 필수.
+            # (Cosmos 1.14: install_deps=False+copy_dbt_packages=False →
+            #  ignore_dbt_packages=False → dbt_packages symlink 생성)
+            project_config=ProjectConfig(DBT_PROJECT, manifest_path=MANIFEST, install_dbt_deps=False),
             profile_config=PROFILE, execution_config=EXEC,
             render_config=RenderConfig(load_method=LoadMode.DBT_MANIFEST,
                                        select=["path:models/marts"]),
