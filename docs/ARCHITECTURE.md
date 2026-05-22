@@ -149,3 +149,183 @@ dbt 계층 구체화(`dbt/maxdl_transform/dbt_project.yml`):
 | helmfile SSOT (FU-6) | 7개 릴리스를 `helmfile.yaml` 로 선언, `needs` 의존순서 + hooks(SealedSecret/Polaris bootstrap/Oracle 커넥터/Superset admin/dbt 아티팩트·password-db). 클린 전체 재구축 검증은 폐기형 클러스터 권장(잔여 AC) | FOLLOWUPS FU-6 |
 
 > 위 값이 불명확하거나 운영 중 변경 가능성이 있는 항목은 [RUNBOOK](./RUNBOOK.md) 의 최신 표를 신뢰원천으로 삼는다.
+
+---
+
+## 5. 내부 상세 아키텍처 (컴포넌트별 분리)
+
+§1 은 컴포넌트 간 흐름. 본 절은 Trino / Airflow / Airbyte **내부**를
+**시크릿·설정 / 플랫폼·인프라 / 비즈니스 로직** 으로 나눠, 어떤 시크릿이
+어느 내부 블록에 닿는지 표현한다. (한 장 통합도는 밀도가 과해 분리.)
+
+### 5.1 Trino 내부
+
+```mermaid
+flowchart LR
+    subgraph SEC_T ["🔑 시크릿·설정"]
+        TS_TLS["trino-tls · trino-tls-pw<br/>keystore.p12 · TRINO_TLS_KEYSTORE_PASSWORD"]
+        TS_PWDB["trino-password-db<br/>SVC_DBT · SVC_SUPERSET · TRINO_USER_* → bcrypt"]
+        TS_INT["trino-internal<br/>TRINO_INTERNAL_SHARED_SECRET"]
+        TS_OAUTH["polaris-oauth<br/>POLARIS_OAUTH_CREDENTIAL · svc-trino"]
+        TS_S3["seaweedfs-s3<br/>S3_ENDPOINT/REGION/ACCESS_KEY/SECRET_KEY"]
+        TS_VAL["charts/trino/values.yaml<br/>groups.txt · rules.json · catalogs"]
+    end
+    subgraph COORD ["trino-coordinator pod"]
+        subgraph CIN ["플랫폼·인프라"]
+            C_HTTPS["HTTPS 8443 엔드포인트"]
+            C_AUTH["password-file 인증"]
+            C_GRP["file group-provider"]
+            C_IPC["coord↔worker 내부통신"]
+        end
+        subgraph CGOV ["거버넌스"]
+            C_ACL["file-based ACL + PII 컬럼 마스킹"]
+        end
+        C_PLAN["쿼리 플래닝·조정 · 비즈니스 로직"]
+    end
+    subgraph WK ["trino-worker pod"]
+        W_EXEC["split 실행 · Iceberg scan/write · 비즈니스 로직"]
+    end
+    CATP["Iceberg 카탈로그 properties · iceberg_bronze/silver/gold · ENV 치환"]
+
+    TS_TLS --> C_HTTPS
+    TS_PWDB --> C_AUTH
+    TS_VAL --> C_GRP
+    TS_VAL --> C_ACL
+    TS_VAL --> CATP
+    TS_INT --> C_IPC
+    TS_OAUTH --> CATP
+    TS_S3 --> CATP
+    C_AUTH --> C_ACL
+    C_GRP --> C_ACL
+    C_ACL --> C_PLAN
+    CATP --> C_PLAN
+    C_PLAN --> W_EXEC
+    C_IPC -.->|"shared-secret"| W_EXEC
+    CATP --> W_EXEC
+```
+
+### 5.2 Airflow 내부
+
+```mermaid
+flowchart LR
+    subgraph SEC_A ["🔑 시크릿·설정"]
+        AS_WEB["airflow-webserver-secret<br/>AIRFLOW_WEBSERVER_SECRET_KEY"]
+        AS_ABAPI["airbyte-api<br/>AIRBYTE_CLIENT_ID/SECRET"]
+        AS_DBT["trino-svc-dbt<br/>SVC_DBT_PASSWORD → TRINO_PASSWORD"]
+        AS_LOG["airflow-s3-logs-creds<br/>AWS_* · REMOTE_BASE_LOG_FOLDER"]
+        AS_S3["seaweedfs-s3<br/>S3_* · 아티팩트 fetch"]
+        AS_ENV["chart env<br/>DEFAULT_TIMEZONE=Asia/Seoul · COSMOS_TELEMETRY=off · REMOTE_LOGGING"]
+        AS_ART["SeaweedFS 아티팩트 tar<br/>dags/ · dbt/ · ingestion-map.yaml · maintenance.yaml"]
+    end
+    subgraph PLAT ["플랫폼·인프라"]
+        P_API["api-server · UI/REST"]
+        P_SCHED["scheduler"]
+        P_DAGP["dag-processor"]
+        P_TRIG["triggerer"]
+        P_PG[("airflow-postgresql · 메타DB")]
+        P_INIT["initContainer fetch-artifact · s3artifact.py"]
+    end
+    subgraph BIZ ["비즈니스 로직 · KubernetesExecutor 워커 pod"]
+        B_SYNC["_airbyte_sync · Airbyte API 트리거+폴링"]
+        B_DBT["Cosmos/dbt · staging·intermediate·marts"]
+        B_MAINT["maintain_iceberg · compaction·expire·orphan"]
+    end
+
+    AS_WEB --> P_API
+    AS_ENV --> P_SCHED
+    AS_ENV --> P_DAGP
+    AS_S3 --> P_INIT
+    AS_ART --> P_INIT
+    P_INIT -->|"/opt/airflow/artifact 전개"| P_DAGP
+    P_DAGP --> P_SCHED
+    P_SCHED --> B_SYNC
+    P_SCHED --> B_DBT
+    P_SCHED --> B_MAINT
+    AS_ABAPI --> B_SYNC
+    AS_DBT --> B_DBT
+    AS_DBT --> B_MAINT
+    AS_LOG --> B_SYNC
+    AS_LOG --> B_DBT
+    AS_LOG --> B_MAINT
+    AS_ART -.->|"ingestion-map: SOURCES·schedule"| B_SYNC
+    AS_ART -.->|"maintenance.yaml: 주기·retention"| B_MAINT
+    P_SCHED --- P_PG
+```
+
+### 5.3 Airbyte 내부
+
+```mermaid
+flowchart LR
+    subgraph SEC_B ["🔑 시크릿·설정"]
+        BS_SRC["src-db-maxplatform/maxapex/pfms/maxtdoracle<br/>SRC_* · host·port·db·user·pw·type"]
+        BS_S3["seaweedfs-s3<br/>S3_* · 목적지 스토리지"]
+        BS_POL["polaris-airbyte · svc-airbyte<br/>catalog-bootstrap 생성"]
+        BS_MAP["config/ingestion-map.yaml<br/>tables · merge/replica mode"]
+    end
+    subgraph PLAT_B ["플랫폼·인프라"]
+        BP_SRV["airbyte-server · API"]
+        BP_TMP["temporal · 워크플로 엔진"]
+        BP_WLA["workload-api-server"]
+        BP_WLL["workload-launcher"]
+        BP_WRK["worker"]
+        BP_CRON["cron"]
+        BP_MAN["manifest-server"]
+        BP_DB[("airbyte-db · Airbyte 자체 메타DB")]
+        BP_MIN[("airbyte-minio · Airbyte 자체 스토리지")]
+    end
+    subgraph BIZ_B ["비즈니스 로직 · sync 시 동적 생성 connector pod"]
+        BB_SRC["source connector pod<br/>source-postgres/mssql/oracle"]
+        BB_DST["destination-s3-data-lake<br/>Bronze Parquet 적재 + Polaris 커밋"]
+    end
+
+    BS_SRC --> BB_SRC
+    BS_S3 --> BB_DST
+    BS_POL --> BB_DST
+    BS_MAP -->|"airbyte-apply: 커넥션 syncCatalog"| BP_SRV
+    BP_SRV --> BP_TMP
+    BP_TMP --> BP_WLA --> BP_WLL
+    BP_WLL -->|"connector pod spawn"| BB_SRC
+    BP_WLL -->|"connector pod spawn"| BB_DST
+    BP_WRK --- BP_TMP
+    BB_SRC -->|"레코드 스트림"| BB_DST
+```
+
+### 5.4 시크릿 전수 매핑
+
+생성 방식 3분류: **(S)** seal-from-env spec(17종) / **(G)** 전용 스크립트 생성 /
+**(C)** catalog-bootstrap 생성.
+
+| 시크릿 | 분류 | NS | 핵심 env / 키 | 적용 내부 블록 |
+|---|---|---|---|---|
+| `src-db-maxplatform/maxapex/pfms/maxtdoracle` | S | ingest | `SRC_*` | Airbyte source connector pod |
+| `seaweedfs-s3` | S | catalog·ingest·query·orchestrate | `S3_ENDPOINT/REGION/ACCESS_KEY/SECRET_KEY/WAREHOUSE_BUCKET` | Trino 카탈로그·Polaris 메타IO·Airbyte 목적지·Airflow 아티팩트 |
+| `polaris-persistence` | S | catalog | `POLARIS_PERSISTENCE_*` | Polaris PostgreSQL 메타스토어 |
+| `polaris-bootstrap` | S | catalog | `POLARIS_BOOTSTRAP_*` | Polaris realm 부트스트랩 Job |
+| `polaris-oauth` | C | query | `POLARIS_OAUTH_CREDENTIAL` (svc-trino) | Trino 카탈로그 OAuth2 |
+| `polaris-airbyte` | C | ingest | svc-airbyte 자격 | Airbyte destination 카탈로그 커밋 |
+| `trino-tls` + `trino-tls-pw` | G+S | query | keystore.p12 · `TRINO_TLS_KEYSTORE_PASSWORD` | Trino coordinator HTTPS 8443 |
+| `trino-internal` | S | query | `TRINO_INTERNAL_SHARED_SECRET` | Trino coord↔worker 내부통신 |
+| `trino-password-db` | G | query | `SVC_DBT`+`SVC_SUPERSET`+`TRINO_USER_*` bcrypt | Trino password-file 인증 |
+| `trino-svc-dbt` | S | orchestrate | `SVC_DBT_PASSWORD` | Airflow Cosmos/dbt → Trino |
+| `trino-svc-superset` | S | bi | `SVC_SUPERSET_PASSWORD` | Superset → Trino |
+| `trino-tls-ca` | G | bi(+) | CA 인증서 | Superset/dbt-trino TLS 검증 |
+| `airbyte-api` | S | orchestrate | `AIRBYTE_CLIENT_ID/SECRET` | Airflow `_airbyte_sync` |
+| `airflow-webserver-secret` | S | orchestrate | `AIRFLOW_WEBSERVER_SECRET_KEY` | Airflow api-server JWT |
+| `airflow-s3-logs-creds` | S | orchestrate | `AWS_*` · `S3_AIRFLOW_REMOTE_BASE_LOG_FOLDER` | Airflow S3 원격 로깅 |
+| `superset-admin` / `superset-secret` | S | bi | `SUPERSET_ADMIN_PASSWORD` / `SUPERSET_SECRET_KEY` | Superset 인증·세션 |
+
+차트 설정 SSOT(시크릿 아님): `charts/trino/values.yaml`(groups.txt·rules.json·
+catalogs), `config/ingestion-map.yaml`, `config/maintenance.yaml` —
+아티팩트 또는 helm values 로 적용.
+
+### 5.5 거버넌스 적용 지점
+
+| # | 무엇 | SSOT | 거치는 변환 | 최종 적용 블록 |
+|---|---|---|---|---|
+| ① | User 계정 | `secrets.env` `TRINO_USER_<NAME>_PASSWORD` | `gen-trino-password-db.sh` → `trino-password-db` + `groups.txt` | Trino coordinator 인증·그룹 |
+| ② | PII 정규화 | `ingestion-map.yaml` `piiRename:{원본:표준}` | `dbt-gen-models.sh` → stg_ 모델 표준어휘 alias | dbt staging (Bronze→Silver 진입) |
+| ③ | PII 마스킹 | `config/pii-columns.yaml` 표준 어휘 | `gen-trino-acl.sh` → `rules.json` columns mask | Trino 쿼리 시 (group=analysts) |
+| ④ | 이관 테이블 대상 | `config/ingestion-map.yaml` (tables·mode) | `airbyte-apply` / `dbt-gen-models.sh` | Airbyte 커넥션(Bronze 적재) + dbt 모델(Silver 변환) |
+
+> 운영 절차: 사용자 추가/제거 = [`USERS.md`](./USERS.md), 적재 주기 =
+> [`SCHEDULING.md`](./SCHEDULING.md), 유지보수 = [`MAINTENANCE.md`](./MAINTENANCE.md).
